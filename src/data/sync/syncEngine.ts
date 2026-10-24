@@ -59,8 +59,14 @@ export const SYNC_TABLES: readonly TableConfig[] = [
     owner: 'user_id',
     onConflict: 'user_id',
     mode: 'update',
-    columns: ['include_exercise_in_budget', 'week_starts_on'],
-    booleans: ['include_exercise_in_budget'],
+    columns: [
+      'include_exercise_in_budget',
+      'week_starts_on',
+      'weigh_in_reminder_enabled',
+      'weigh_in_reminder_time',
+      'time_zone',
+    ],
+    booleans: ['include_exercise_in_budget', 'weigh_in_reminder_enabled'],
   },
   {
     table: 'nutrition_goals',

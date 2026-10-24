@@ -18,7 +18,18 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppErrorScreen } from '@/components/AppErrorScreen';
 import { Button, ErrorState, LoadingView } from '@/components/ui';
 import { initSession, retryInitialSync, signOut, useSession } from '@/features/auth/session';
-import { listenForReminderTaps, rescheduleReminders } from '@/features/notifications/scheduler';
+import {
+  listenForReminderTaps,
+  rescheduleReminders,
+  setWeighInRecordedCheck,
+} from '@/features/notifications/scheduler';
+import { useWeighInBadgeSync } from '@/features/notifications/useWeighIn';
+import {
+  isWeighInRecordedToday,
+  registerPushToken,
+  syncDeviceTimeZone,
+} from '@/features/notifications/weighIn';
+import { writeLocal } from '@/data/hooks';
 import { getBilling } from '@/features/premium/billing';
 import { revalidatePremium } from '@/features/premium/entitlement';
 import { isSupabaseConfigured } from '@/lib/config';
@@ -60,9 +71,22 @@ function RootNavigator() {
   }, [status]);
 
   const canOpenReminder = status === 'ready' && onboarded && !recovery;
+  useWeighInBadgeSync(canOpenReminder);
   useEffect(() => {
     if (!canOpenReminder) return;
     const stopTaps = listenForReminderTaps((route) => router.navigate(route));
+    // A weigh-in push arriving while the app is open is hidden if this device already has
+    // today's weight (e.g. recorded offline and not yet synced).
+    setWeighInRecordedCheck(async () => {
+      const uid = useSession.getState().userId;
+      return uid ? isWeighInRecordedToday(uid) : false;
+    });
+    const onForeground = () => {
+      const uid = useSession.getState().userId;
+      void registerPushToken(); // tokens can change (reinstall, restore, OS refresh)
+      if (uid) void syncDeviceTimeZone(uid, writeLocal).catch(() => {});
+    };
+    onForeground();
     // Permission may have been changed in the system settings while the app was in background.
     // Renewals, cancellations and refunds reach the server via the webhook; re-read the plan
     // on launch / foreground and whenever the store SDK reports a change.
@@ -72,8 +96,10 @@ function RootNavigator() {
       if (s !== 'active') return;
       void rescheduleReminders();
       void revalidatePremium();
+      onForeground();
     });
     return () => {
+      setWeighInRecordedCheck(null);
       stopTaps();
       stopBilling();
       appState.remove();

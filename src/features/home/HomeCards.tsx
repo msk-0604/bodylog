@@ -359,6 +359,7 @@ export function TodayExerciseCard({
 }
 
 const styles = StyleSheet.create({
+  prompt: { gap: spacing.sm },
   flex: { flex: 1 },
   calorieCard: { alignItems: 'center', gap: spacing.lg, paddingVertical: spacing.xxl },
   calorieStats: { flexDirection: 'row', alignSelf: 'stretch', alignItems: 'center' },
@@ -383,3 +384,17 @@ const styles = StyleSheet.create({
   mealHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   inlineEmpty: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
 });
+
+/** Shown when the weigh-in reminder time has passed and today's weight is missing. */
+export function WeighInPromptCard({ onRecord }: { onRecord: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <Card style={[styles.prompt, { backgroundColor: colors.accentSoft }]} testID="weigh-in-prompt">
+      <AppText variant="headline">今日の体重がまだ記録されていません</AppText>
+      <AppText variant="subhead" color="textSecondary">
+        毎日同じタイミングで測ると、変化がわかりやすくなります。
+      </AppText>
+      <Button label="体重を記録" size="md" onPress={onRecord} testID="weigh-in-prompt-record" />
+    </Card>
+  );
+}

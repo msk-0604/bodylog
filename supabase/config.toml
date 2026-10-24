@@ -433,3 +433,8 @@ verify_jwt = true
 # (Authorization header compared in constant time with REVENUECAT_WEBHOOK_AUTH, fails closed).
 [functions.revenuecat-webhook]
 verify_jwt = false
+
+# Called by pg_cron with "Authorization: Bearer <REMINDER_CRON_SECRET>" (checked in constant time,
+# fails closed when the secret is missing).
+[functions.weigh-in-reminders]
+verify_jwt = false

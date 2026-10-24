@@ -11,9 +11,11 @@ import {
   PfcCard,
   TodayExerciseCard,
   TodayMealsCard,
+  WeighInPromptCard,
   WeightCard,
 } from '@/features/home/HomeCards';
 import { useExercises, usePreferences } from '@/features/exercise/hooks';
+import { useWeighInStatus } from '@/features/notifications/useWeighIn';
 import { useMealItems } from '@/features/meals/hooks';
 import { useMealsUi } from '@/features/meals/mealsUi';
 import { useGoal, useProfile, useWeights } from '@/features/profile/hooks';
@@ -22,6 +24,7 @@ import { useToday } from '@/lib/useToday';
 
 export default function HomeScreen() {
   const today = useToday();
+  const weighIn = useWeighInStatus();
   const goal = useGoal(today).data ?? null;
   const profile = useProfile().data;
   const weights = useWeights();
@@ -69,6 +72,10 @@ export default function HomeScreen() {
           carbohydrateG: goal?.carbohydrateG ?? null,
         }}
       />
+
+      {weighIn === 'pending' ? (
+        <WeighInPromptCard onRecord={() => router.push('/weight-entry')} />
+      ) : null}
 
       <SectionHeader title="体重" />
       <WeightCard

@@ -167,31 +167,31 @@ describe('reminders', () => {
     await openSettings();
     expect(mockNotifications.requests).toBe(0); // never asked before the user opts in
 
-    await fireEvent(screen.getByTestId('reminder-switch-weigh_in'), 'valueChange', true);
-    await waitFor(() => expect(mockNotifications.scheduled.has('reminder-weigh_in')).toBe(true));
+    await fireEvent(screen.getByTestId('reminder-switch-breakfast'), 'valueChange', true);
+    await waitFor(() => expect(mockNotifications.scheduled.has('reminder-breakfast')).toBe(true));
     expect(mockNotifications.requests).toBe(1);
-    expect(mockNotifications.scheduled.get('reminder-weigh_in')!.trigger).toMatchObject({
+    expect(mockNotifications.scheduled.get('reminder-breakfast')!.trigger).toMatchObject({
       type: 'daily',
-      hour: 7,
-      minute: 0,
+      hour: 8,
+      minute: 30,
     });
 
-    await fireEvent.press(screen.getByLabelText('朝の体重測定の時刻を1時間後に'));
-    await fireEvent.press(screen.getByLabelText('朝の体重測定の時刻を5分後に'));
+    await fireEvent.press(screen.getByLabelText('朝食の記録の時刻を1時間後に'));
+    await fireEvent.press(screen.getByLabelText('朝食の記録の時刻を5分後に'));
     await waitFor(() =>
-      expect(mockNotifications.scheduled.get('reminder-weigh_in')!.trigger).toMatchObject({
-        hour: 8,
-        minute: 5,
+      expect(mockNotifications.scheduled.get('reminder-breakfast')!.trigger).toMatchObject({
+        hour: 9,
+        minute: 35,
       }),
     );
     expect(mockNotifications.scheduled.size).toBe(1);
 
-    await fireEvent(screen.getByTestId('reminder-switch-weigh_in'), 'valueChange', false);
+    await fireEvent(screen.getByTestId('reminder-switch-breakfast'), 'valueChange', false);
     await waitFor(() => expect(mockNotifications.scheduled.size).toBe(0));
     const stored = await mockDb!.get<{ enabled: number; hour: number; minute: number }>(
-      "SELECT enabled, hour, minute FROM notification_settings WHERE kind = 'weigh_in'",
+      "SELECT enabled, hour, minute FROM notification_settings WHERE kind = 'breakfast'",
     );
-    expect(stored).toEqual({ enabled: 0, hour: 8, minute: 5 });
+    expect(stored).toEqual({ enabled: 0, hour: 9, minute: 35 });
   });
 
   it('keeps the reminder off and offers the system settings when permission is denied', async () => {

@@ -1,4 +1,8 @@
-export const REMINDER_KINDS = ['weigh_in', 'breakfast', 'lunch', 'dinner', 'daily_review'] as const;
+/**
+ * Device-local daily reminders. The weigh-in reminder is NOT here: it is sent by the server only
+ * when today's weight is missing (src/domain/weighIn.ts, Edge Function weigh-in-reminders).
+ */
+export const REMINDER_KINDS = ['breakfast', 'lunch', 'dinner', 'daily_review'] as const;
 export type ReminderKind = (typeof REMINDER_KINDS)[number];
 
 export type ReminderSetting = {
@@ -12,13 +16,6 @@ export const REMINDER_INFO: Record<
   ReminderKind,
   { label: string; defaultHour: number; defaultMinute: number; title: string; body: string }
 > = {
-  weigh_in: {
-    label: '朝の体重測定',
-    defaultHour: 7,
-    defaultMinute: 0,
-    title: '体重を記録しましょう',
-    body: '毎朝同じタイミングで測ると、変化がわかりやすくなります。',
-  },
   breakfast: {
     label: '朝食の記録',
     defaultHour: 8,

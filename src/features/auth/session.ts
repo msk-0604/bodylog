@@ -13,6 +13,12 @@ import {
   configureNotifications,
   rescheduleReminders,
 } from '@/features/notifications/scheduler';
+import {
+  clearWeighInOnDevice,
+  refreshWeighIn,
+  registerPushToken,
+  unregisterPushToken,
+} from '@/features/notifications/weighIn';
 import { isLocalMode, LOCAL_USER_ID } from '@/lib/config';
 import { queryClient } from '@/lib/queryClient';
 import { getSupabase } from '@/lib/supabase';
@@ -84,6 +90,9 @@ async function enterSignedIn(userId: string, email: string | null) {
   }
   useSession.setState({ status: 'ready', onboarded: await loadOnboarded(userId) });
   void rescheduleReminders();
+  // weigh-in push: (re)assign this device's token to this user; badge from local data
+  void registerPushToken();
+  void refreshWeighIn(userId).catch(() => {});
   if (!isLocalMode()) {
     netSub?.();
     netSub = NetInfo.addEventListener((s) => {
@@ -97,6 +106,7 @@ function enterSignedOut() {
   setSyncUser(null);
   // Reminders belong to the signed-in user's settings (wiped on sign-out).
   void cancelAllReminders().catch(() => {});
+  void clearWeighInOnDevice().catch(() => {});
   void getBilling()
     .reset()
     .catch(() => {});
@@ -168,6 +178,8 @@ export async function signOut(): Promise<void> {
   } catch {
     // proceed: the caller already warned about unsynced data
   }
+  // While still authenticated: stop this user's weigh-in pushes to this device.
+  await unregisterPushToken();
   await getSupabase().auth.signOut({ scope: 'local' });
   await wipeUserData(await getDb());
   enterSignedOut();
@@ -175,6 +187,8 @@ export async function signOut(): Promise<void> {
 
 /** Called after the server deleted the account. */
 export async function clearAfterAccountDeletion(): Promise<void> {
+  // server-side tokens and history were deleted with the account (ON DELETE CASCADE)
+  await clearWeighInOnDevice().catch(() => {});
   await wipeUserData(await getDb());
   queryClient.clear();
   if (isLocalMode()) {
