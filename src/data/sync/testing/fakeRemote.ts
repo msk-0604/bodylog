@@ -5,6 +5,20 @@ import { RemoteError, type RemoteApi, type Row } from '../remote';
 
 const LIMITS: Record<string, number> = { food_favorites: 10, meal_templates: 1 };
 
+/** Postgres boolean columns reject 0/1 sent as JSON numbers. */
+const BOOLEAN_COLUMNS = ['include_exercise_in_budget', 'kcal_is_estimated'];
+function checkBooleans(row: Row) {
+  for (const c of BOOLEAN_COLUMNS) {
+    if (c in row && row[c] !== null && typeof row[c] !== 'boolean') {
+      throw new RemoteError(
+        `invalid input syntax for type boolean: ${String(row[c])}`,
+        'rejected',
+        '22P02',
+      );
+    }
+  }
+}
+
 export class FakeRemote implements RemoteApi {
   tables = new Map<string, Map<string, Row>>();
   foods = new Map<string, MasterFoodRow>();
@@ -41,6 +55,7 @@ export class FakeRemote implements RemoteApi {
     // validate all first (statement is atomic; the DB trigger checks row by row)
     const added = new Map<string, number>();
     for (const row of rows) {
+      checkBooleans(row);
       if (!row.user_id) throw new RemoteError('null user_id', 'rejected', '23502');
       const limit = LIMITS[table];
       const existing = t.get(String(row.id));
@@ -74,18 +89,25 @@ export class FakeRemote implements RemoteApi {
     }
   }
 
-  async updateProfile(userId: string, values: Row) {
+  async updateOwnRow(table: string, ownerColumn: string, userId: string, values: Row) {
     this.maybeFail();
-    const t = this.table('profiles');
-    const existing = t.get(userId) ?? { id: userId, created_at: this.now() };
-    t.set(userId, { ...existing, ...values, id: userId, updated_at: this.now() });
+    checkBooleans(values);
+    const t = this.table(table);
+    // The server creates these rows (trigger on auth.users); updating a missing row is a no-op.
+    const existing = t.get(userId) ?? { [ownerColumn]: userId, created_at: this.now() };
+    t.set(userId, { ...existing, ...values, [ownerColumn]: userId, updated_at: this.now() });
   }
 
-  async pull(table: string, userId: string, since: string | null, limit: number) {
+  async pull(
+    table: string,
+    ownerColumn: string,
+    userId: string,
+    since: string | null,
+    limit: number,
+  ) {
     this.maybeFail();
-    const owner = table === 'profiles' ? 'id' : 'user_id';
     return [...this.table(table).values()]
-      .filter((r) => r[owner] === userId && (!since || String(r.updated_at) >= since))
+      .filter((r) => r[ownerColumn] === userId && (!since || String(r.updated_at) >= since))
       .sort((a, b) => String(a.updated_at).localeCompare(String(b.updated_at)))
       .slice(0, limit)
       .map((r) => ({ ...r }));

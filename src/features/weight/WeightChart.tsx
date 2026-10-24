@@ -3,32 +3,49 @@ import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 import { AppText } from '@/components/ui';
-import { diffDays, formatDateKeyJa, lastNDays, type DateKey } from '@/domain/date';
-import { movingAverage } from '@/domain/weight';
+import { addDays, diffDays, formatDateKeyJa, type DateKey } from '@/domain/date';
+import { movingAverageSeries } from '@/domain/weightAnalysis';
 import { spacing, useTheme } from '@/theme';
 
 type Props = {
   daily: ReadonlyMap<DateKey, number>;
   end: DateKey;
   days: number;
+  unit: 'kg' | '%';
+  /** draws the 7-day moving average */
+  showAverage?: boolean;
+  /** horizontal reference line (e.g. target weight) */
+  target?: number | null;
   height?: number;
 };
 
 const PAD_Y = 12;
 /** Keeps the first/last dots fully visible. */
 const PAD_X = 6;
+/** Above this many points, dots are omitted (line only) to stay readable. */
+const MAX_DOTS = 45;
 
 /**
- * Minimal weight line chart. Days without records are skipped (never plotted as 0).
- * Shows daily values (dots + line) and the 7-day moving average (dashed).
+ * Line chart of daily values. Days without records are skipped (never plotted as 0).
  */
-export function WeightChart({ daily, end, days, height = 160 }: Props) {
+export function WeightChart({
+  daily,
+  end,
+  days,
+  unit,
+  showAverage = true,
+  target = null,
+  height = 170,
+}: Props) {
   const { colors } = useTheme();
   const [width, setWidth] = useState(0);
-  const range = lastNDays(end, days);
-  const start = range[0]!;
-  const points = range.filter((d) => daily.has(d)).map((d) => ({ date: d, value: daily.get(d)! }));
-  const avg = movingAverage(daily, 7).filter((p) => diffDays(start, p.date) >= 0);
+  const start = addDays(end, -(days - 1));
+  const inRange = (d: DateKey) => d >= start && d <= end;
+  const points = [...daily.entries()]
+    .filter(([d]) => inRange(d))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, value]) => ({ date, value }));
+  const avg = showAverage ? movingAverageSeries(daily, 7).filter((p) => inRange(p.date)) : [];
 
   const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
 
@@ -43,6 +60,7 @@ export function WeightChart({ daily, end, days, height = 160 }: Props) {
   }
 
   const values = [...points.map((p) => p.value), ...avg.map((p) => p.value)];
+  if (target !== null) values.push(target);
   let min = Math.min(...values);
   let max = Math.max(...values);
   if (max - min < 1) {
@@ -60,10 +78,11 @@ export function WeightChart({ daily, end, days, height = 160 }: Props) {
       .join(' ');
 
   const last = points.at(-1)!;
-  const a11y = `${formatDateKeyJa(start)}から${formatDateKeyJa(end)}の体重グラフ。記録${points.length}日、最小${min.toFixed(1)}キロ、最大${max.toFixed(1)}キロ、最新${last.value.toFixed(1)}キロ`;
+  const label = unit === 'kg' ? '体重' : '体脂肪率';
+  const a11y = `${formatDateKeyJa(start)}から${formatDateKeyJa(end)}の${label}グラフ。記録${points.length}日、最小${min.toFixed(1)}${unit}、最大${max.toFixed(1)}${unit}、最新${last.value.toFixed(1)}${unit}`;
 
   return (
-    <View accessible accessibilityRole="image" accessibilityLabel={a11y}>
+    <View accessible accessibilityRole="image" accessibilityLabel={a11y} testID="weight-chart">
       <View style={[styles.chart, { height }]} onLayout={onLayout}>
         {width > 0 ? (
           <Svg width={width} height={height}>
@@ -78,6 +97,17 @@ export function WeightChart({ daily, end, days, height = 160 }: Props) {
                 strokeWidth={1}
               />
             ))}
+            {target !== null ? (
+              <Line
+                x1={0}
+                x2={width}
+                y1={y(target)}
+                y2={y(target)}
+                stroke={colors.success}
+                strokeWidth={1.5}
+                strokeDasharray="2 4"
+              />
+            ) : null}
             {avg.length > 1 ? (
               <Path
                 d={toPath(avg)}
@@ -90,7 +120,7 @@ export function WeightChart({ daily, end, days, height = 160 }: Props) {
             {points.length > 1 ? (
               <Path d={toPath(points)} stroke={colors.accent} strokeWidth={2.5} fill="none" />
             ) : null}
-            {points.map((p) => (
+            {(points.length <= MAX_DOTS ? points : [last]).map((p) => (
               <Circle key={p.date} cx={x(p.date)} cy={y(p.value)} r={3.5} fill={colors.accent} />
             ))}
           </Svg>
@@ -101,7 +131,7 @@ export function WeightChart({ daily, end, days, height = 160 }: Props) {
           {formatDateKeyJa(start)}
         </AppText>
         <AppText variant="caption" color="textTertiary">
-          {max.toFixed(1)} – {min.toFixed(1)} kg
+          {max.toFixed(1)} – {min.toFixed(1)} {unit}
         </AppText>
         <AppText variant="caption" color="textTertiary">
           {formatDateKeyJa(end)}
@@ -110,14 +140,26 @@ export function WeightChart({ daily, end, days, height = 160 }: Props) {
       <View style={styles.legend}>
         <View style={[styles.legendLine, { backgroundColor: colors.accent }]} />
         <AppText variant="caption" color="textSecondary">
-          体重（1日の最初の記録）
+          {label}（1日の最初の記録）
         </AppText>
-        <View
-          style={[styles.legendLine, styles.legendDash, { borderColor: colors.textTertiary }]}
-        />
-        <AppText variant="caption" color="textSecondary">
-          7日移動平均
-        </AppText>
+        {showAverage ? (
+          <>
+            <View
+              style={[styles.legendLine, styles.legendDash, { borderColor: colors.textTertiary }]}
+            />
+            <AppText variant="caption" color="textSecondary">
+              7日移動平均
+            </AppText>
+          </>
+        ) : null}
+        {target !== null ? (
+          <>
+            <View style={[styles.legendLine, styles.legendDash, { borderColor: colors.success }]} />
+            <AppText variant="caption" color="textSecondary">
+              目標
+            </AppText>
+          </>
+        ) : null}
       </View>
     </View>
   );

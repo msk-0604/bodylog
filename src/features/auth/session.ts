@@ -7,6 +7,11 @@ import { wipeUserData } from '@/data/db/schema';
 import { getMeta, getProfile, setMeta } from '@/data/repo/profile';
 import { countPending } from '@/data/sync/syncEngine';
 import { scheduleSync, setSyncUser, syncNow } from '@/data/sync/syncService';
+import {
+  cancelAllReminders,
+  configureNotifications,
+  rescheduleReminders,
+} from '@/features/notifications/scheduler';
 import { isLocalMode, LOCAL_USER_ID } from '@/lib/config';
 import { queryClient } from '@/lib/queryClient';
 import { getSupabase } from '@/lib/supabase';
@@ -73,6 +78,7 @@ async function enterSignedIn(userId: string, email: string | null) {
     }
   }
   useSession.setState({ status: 'ready', onboarded: await loadOnboarded(userId) });
+  void rescheduleReminders();
   if (!isLocalMode()) {
     netSub?.();
     netSub = NetInfo.addEventListener((s) => {
@@ -84,6 +90,8 @@ async function enterSignedIn(userId: string, email: string | null) {
 
 function enterSignedOut() {
   setSyncUser(null);
+  // Reminders belong to the signed-in user's settings (wiped on sign-out).
+  void cancelAllReminders().catch(() => {});
   netSub?.();
   netSub = null;
   queryClient.clear();
@@ -110,6 +118,7 @@ function onSession(session: Session | null) {
 export async function initSession(): Promise<void> {
   if (initialized) return;
   initialized = true;
+  void configureNotifications().catch(() => {});
   if (isLocalMode()) {
     await enterSignedIn(LOCAL_USER_ID, null);
     return;

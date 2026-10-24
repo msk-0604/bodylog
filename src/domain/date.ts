@@ -72,3 +72,14 @@ export function formatDateKeyJaLong(key: DateKey): string {
 export function formatTimeJa(date: Date): string {
   return `${date.getHours()}:${pad(date.getMinutes())}`;
 }
+
+/** `date` at the clock time of `time` (local). Used to record on a past day from the calendar. */
+export function atDateWithTime(date: DateKey, time: Date = new Date()): Date {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  return new Date(y, m - 1, d, time.getHours(), time.getMinutes());
+}
+
+/** True when `d` is later than now (with a small tolerance for clock drift while editing). */
+export function isInFuture(d: Date, toleranceMs = 60_000): boolean {
+  return d.getTime() > Date.now() + toleranceMs;
+}

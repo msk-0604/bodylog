@@ -182,7 +182,60 @@ CREATE TABLE meal_template_items (
 CREATE INDEX meal_template_items_template ON meal_template_items (template_id);
 `;
 
-const MIGRATIONS: readonly string[] = [V1];
+/** Phase 4/5: exercise, synced preferences, device-local notification settings. */
+const V2 = `
+CREATE TABLE exercise_entries (
+  id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT NOT NULL,
+  exercise_type TEXT NOT NULL,
+  name TEXT NOT NULL,
+  performed_at TEXT NOT NULL,
+  performed_on TEXT NOT NULL,
+  time_zone TEXT NOT NULL,
+  duration_min INTEGER NOT NULL,
+  kcal REAL,
+  kcal_is_estimated INTEGER NOT NULL DEFAULT 0,
+  mets REAL,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  deleted_at TEXT,
+  ${SYNC_COLS}
+);
+CREATE INDEX exercise_entries_user_day ON exercise_entries (user_id, performed_on);
+
+CREATE TABLE exercise_sets (
+  id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT NOT NULL,
+  exercise_entry_id TEXT NOT NULL,
+  exercise_name TEXT NOT NULL,
+  set_number INTEGER NOT NULL,
+  weight_kg REAL,
+  reps INTEGER,
+  created_at TEXT NOT NULL,
+  deleted_at TEXT,
+  ${SYNC_COLS}
+);
+CREATE INDEX exercise_sets_entry ON exercise_sets (exercise_entry_id);
+
+CREATE TABLE user_preferences (
+  user_id TEXT PRIMARY KEY NOT NULL,
+  include_exercise_in_budget INTEGER NOT NULL DEFAULT 0,
+  week_starts_on INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  ${SYNC_COLS}
+);
+
+-- Device-local (not synced): reminders are scheduled per device.
+CREATE TABLE notification_settings (
+  kind TEXT PRIMARY KEY NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  hour INTEGER NOT NULL,
+  minute INTEGER NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`;
+
+const MIGRATIONS: readonly string[] = [V1, V2];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
@@ -204,6 +257,10 @@ export async function migrate(db: SqlDb): Promise<void> {
 /** Tables holding the signed-in user's data (wiped on logout / account deletion). */
 export const USER_TABLES = [
   'profiles',
+  'user_preferences',
+  'exercise_entries',
+  'exercise_sets',
+  'notification_settings',
   'nutrition_goals',
   'body_measurements',
   'custom_foods',

@@ -15,17 +15,29 @@ import type { MealItemView } from '@/data/repo/meals';
 
 import { spacing, useTheme } from '@/theme';
 
-/** Exercise logging arrives in Phase 4; the card shows its empty state until then. */
 export type ExerciseSummary = {
   id: string;
   name: string;
   durationMin: number;
   kcal: number | null;
+  kcalIsEstimated: boolean;
 };
 
 /* ---------------- Calories ---------------- */
 
-export function CalorieCard({ intake, goal }: { intake: number; goal: number | null }) {
+/**
+ * `goal` is the day's budget. When exercise is added to the budget, `exerciseBonus` > 0 and the
+ * breakdown (目標 + 運動) is shown under the ring.
+ */
+export function CalorieCard({
+  intake,
+  goal,
+  exerciseBonus = 0,
+}: {
+  intake: number;
+  goal: number | null;
+  exerciseBonus?: number;
+}) {
   const { colors } = useTheme();
   const balance = goal ? calorieBalance(intake, goal) : null;
   const isOver = !!balance && balance.over > 0;
@@ -70,6 +82,12 @@ export function CalorieCard({ intake, goal }: { intake: number; goal: number | n
         <View style={[styles.statDivider, { backgroundColor: colors.separator }]} />
         <Stat label="目標" value={goal ? formatKcal(goal) : '未設定'} unit={goal ? 'kcal' : ''} />
       </View>
+      {goal && exerciseBonus > 0 ? (
+        <AppText variant="caption" color="textSecondary" testID="exercise-bonus">
+          目標 {formatKcal(goal - exerciseBonus)} kcal ＋ 運動 {formatKcal(exerciseBonus)}{' '}
+          kcal（推定・安静時分を除く）
+        </AppText>
+      ) : null}
     </Card>
   );
 }
@@ -293,7 +311,13 @@ export function TodayMealsCard({
 
 /* ---------------- Exercise ---------------- */
 
-export function TodayExerciseCard({ items }: { items: readonly ExerciseSummary[] }) {
+export function TodayExerciseCard({
+  items,
+  onAdd,
+}: {
+  items: readonly ExerciseSummary[];
+  onAdd?: () => void;
+}) {
   const { colors } = useTheme();
   if (items.length === 0) {
     return (
@@ -301,9 +325,19 @@ export function TodayExerciseCard({ items }: { items: readonly ExerciseSummary[]
         <View style={styles.inlineEmpty}>
           <DumbbellIcon color={colors.textTertiary} />
           <AppText variant="subhead" color="textSecondary" style={styles.flex}>
-            今日の運動記録はありません。「記録」タブから追加できます。
+            今日の運動記録はありません。
           </AppText>
         </View>
+        {onAdd ? (
+          <Button
+            label="運動を記録"
+            variant="secondary"
+            size="md"
+            icon={<PlusIcon color={colors.accent} size={18} />}
+            onPress={onAdd}
+            style={styles.cardButton}
+          />
+        ) : null}
       </Card>
     );
   }
@@ -313,7 +347,10 @@ export function TodayExerciseCard({ items }: { items: readonly ExerciseSummary[]
         <View key={e.id} style={styles.mealHead}>
           <AppText variant="body">{e.name}</AppText>
           <AppText variant="subhead" color="textSecondary" tabular>
-            {e.durationMin}分{e.kcal !== null ? `・推定${formatKcal(e.kcal)} kcal` : ''}
+            {e.durationMin}分
+            {e.kcal !== null
+              ? `・${e.kcalIsEstimated ? '推定' : ''}${formatKcal(e.kcal)} kcal`
+              : ''}
           </AppText>
         </View>
       ))}

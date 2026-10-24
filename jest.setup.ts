@@ -8,3 +8,10 @@ jest.mock('@react-native-community/netinfo', () =>
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   require('@react-native-community/netinfo/jest/netinfo-mock.js'),
 );
+
+jest.mock(
+  'expo-notifications',
+  () =>
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('./src/testing/notificationsMock').notificationsModule,
+);
