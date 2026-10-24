@@ -1,8 +1,18 @@
 import { useState } from 'react';
 
-import { AppText, Button, closeModal, LoadingView, ModalScreen, TextField } from '@/components/ui';
+import {
+  AppText,
+  Button,
+  Card,
+  closeModal,
+  LoadingView,
+  ModalScreen,
+  SwitchRow,
+  TextField,
+} from '@/components/ui';
 import { writeLocal } from '@/data/hooks';
 import { saveGoal, type Goal } from '@/data/repo/profile';
+import { savePreferences } from '@/data/repo/settings';
 import { toDateKey } from '@/domain/date';
 import { ageOn, estimateCalorieGoal, type GoalType } from '@/domain/goals';
 import { isValidWeightKg, parseDecimalInput, WEIGHT_MAX_KG, WEIGHT_MIN_KG } from '@/domain/weight';
@@ -12,6 +22,7 @@ import {
   parseGoalDraft,
   type GoalDraft,
 } from '@/features/profile/GoalEditor';
+import { usePreferences } from '@/features/exercise/hooks';
 import { useGoal, useLatestWeight, useProfile } from '@/features/profile/hooks';
 import { haptics } from '@/lib/haptics';
 import { useToday } from '@/lib/useToday';
@@ -112,10 +123,31 @@ function GoalsForm({ goal }: { goal: Goal | null }) {
           onPress={() => setDraft(draftFromEstimate(draft.goalType, estimate))}
         />
       ) : null}
+      <ExerciseBudgetSetting />
       <AppText variant="caption" color="textTertiary">
         変更は今日から適用されます。過去の日の集計には、その日に設定されていた目標が使われます。
       </AppText>
       <Button label="保存" onPress={save} loading={saving} testID="goals-save" />
     </ModalScreen>
+  );
+}
+
+/** Saved immediately (independent of the goal form's 保存). */
+function ExerciseBudgetSetting() {
+  const prefs = usePreferences().data;
+  const on = prefs?.includeExerciseInBudget ?? false;
+  return (
+    <Card>
+      <SwitchRow
+        title="運動の消費カロリーを残りに加える"
+        subtitle="オンにすると、その日の運動で消費した分を目標カロリーに加えます。安静時の消費分を差し引いた推定値です。"
+        value={on}
+        disabled={!prefs}
+        onValueChange={(v) =>
+          void writeLocal((db, uid) => savePreferences(db, uid, { includeExerciseInBudget: v }))
+        }
+        testID="include-exercise-switch"
+      />
+    </Card>
   );
 }

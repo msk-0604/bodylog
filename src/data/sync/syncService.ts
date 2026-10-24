@@ -30,6 +30,8 @@ let remote: RemoteApi | null = null;
 let running: Promise<void> | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let failures = 0;
+/** a sync was requested while one was running: run once more afterwards */
+let rerun = false;
 
 const BASE_DELAY = 2_000;
 const MAX_DELAY = 15 * 60_000;
@@ -48,8 +50,13 @@ async function refreshCounts() {
 /** Runs one full sync now. Throws on failure (callers decide how to surface it). */
 export async function syncNow(): Promise<void> {
   if (!userId || !isSupabaseConfigured()) return;
-  if (running) return running;
+  if (running) {
+    // Changes written during this run may have been read already; sync again when it ends.
+    rerun = true;
+    return running;
+  }
   const uid = userId;
+  rerun = false;
   running = (async () => {
     useSyncStatus.setState({ phase: 'syncing' });
     try {
@@ -58,6 +65,7 @@ export async function syncNow(): Promise<void> {
       failures = 0;
       useSyncStatus.setState({ phase: 'idle', lastSyncedAt: new Date().toISOString() });
       await queryClient.invalidateQueries({ queryKey: ['local'] });
+      if (rerun) scheduleSync(0);
     } catch (e) {
       failures++;
       const offline = e instanceof RemoteError && e.kind !== 'rejected';
@@ -92,6 +100,7 @@ let appStateSub: { remove(): void } | null = null;
 export function setSyncUser(id: string | null) {
   userId = id;
   failures = 0;
+  rerun = false;
   if (timer) clearTimeout(timer);
   appStateSub?.remove();
   appStateSub = null;

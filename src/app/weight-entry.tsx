@@ -2,10 +2,18 @@ import { useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Alert, StyleSheet, TextInput, View } from 'react-native';
 
-import { AppText, Button, Card, closeModal, LoadingView, ModalScreen } from '@/components/ui';
+import {
+  AppText,
+  Button,
+  Card,
+  closeModal,
+  DateTimeField,
+  LoadingView,
+  ModalScreen,
+  TextField,
+} from '@/components/ui';
 import { writeLocal } from '@/data/hooks';
 import { addWeight, deleteWeight, updateWeight, type WeightRecord } from '@/data/repo/body';
-import { formatDateKeyJa, formatTimeJa, toDateKey } from '@/domain/date';
 import {
   BODY_FAT_MAX_PCT,
   BODY_FAT_MIN_PCT,
@@ -16,12 +24,13 @@ import {
   WEIGHT_MAX_KG,
   WEIGHT_MIN_KG,
 } from '@/domain/weight';
+import { atDateWithTime, isDateKey, isInFuture } from '@/domain/date';
 import { useWeights } from '@/features/profile/hooks';
 import { haptics } from '@/lib/haptics';
 import { MIN_TAP, radius, spacing, typography, useTheme } from '@/theme';
 
 export default function WeightEntryScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, date } = useLocalSearchParams<{ id?: string; date?: string }>();
   const weights = useWeights();
   if (!weights.data) return <LoadingView />;
   const editing = id ? weights.data.find((w) => w.id === id) : undefined;
@@ -32,6 +41,10 @@ export default function WeightEntryScreen() {
       editing={editing}
       initialWeight={editing ? editing.weightKg.toFixed(1) : (prev?.weightKg.toFixed(1) ?? '')}
       initialFat={editing?.bodyFatPct?.toFixed(1) ?? ''}
+      initialNote={editing?.note ?? ''}
+      initialAt={
+        editing?.measuredAt ?? (date && isDateKey(date) ? atDateWithTime(date) : new Date())
+      }
     />
   );
 }
@@ -40,10 +53,14 @@ function WeightForm({
   editing,
   initialWeight,
   initialFat,
+  initialNote,
+  initialAt,
 }: {
   editing: WeightRecord | undefined;
   initialWeight: string;
   initialFat: string;
+  initialNote: string;
+  initialAt: Date;
 }) {
   const { colors } = useTheme();
   const [text, setWeightText] = useState(initialWeight);
@@ -51,8 +68,8 @@ function WeightForm({
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const [now] = useState(() => new Date());
-  const measuredAt = editing?.measuredAt ?? now;
+  const [measuredAt, setMeasuredAt] = useState(initialAt);
+  const [note, setNote] = useState(initialNote);
 
   const weight = parseDecimalInput(text);
   const fat = fatText.trim() === '' ? null : parseDecimalInput(fatText);
@@ -65,9 +82,13 @@ function WeightForm({
       ? `${BODY_FAT_MIN_PCT}〜${BODY_FAT_MAX_PCT}%の範囲で入力してください`
       : null;
 
+  const [futureError, setFutureError] = useState<string | null>(null);
+
   const save = async () => {
     setSubmitted(true);
-    if (weightError || fatError || weight === null) {
+    const inFuture = isInFuture(measuredAt);
+    setFutureError(inFuture ? '未来の日時は記録できません' : null);
+    if (weightError || fatError || inFuture || weight === null) {
       haptics.warning();
       return;
     }
@@ -76,7 +97,7 @@ function WeightForm({
     savingRef.current = true;
     setSaving(true);
     try {
-      const input = { weightKg: weight, bodyFatPct: fat, measuredAt };
+      const input = { weightKg: weight, bodyFatPct: fat, measuredAt, note };
       await writeLocal(async (db, uid) => {
         if (editing) await updateWeight(db, uid, editing.id, input);
         else await addWeight(db, uid, input);
@@ -108,9 +129,12 @@ function WeightForm({
 
   return (
     <ModalScreen title={editing ? '体重の編集' : '体重を記録'} testID="weight-entry-screen">
-      <AppText variant="subhead" color="textSecondary" style={styles.when}>
-        {formatDateKeyJa(toDateKey(measuredAt))} {formatTimeJa(measuredAt)}
-      </AppText>
+      <DateTimeField value={measuredAt} onChange={setMeasuredAt} testID="weight-datetime" />
+      {futureError ? (
+        <AppText variant="footnote" color="danger">
+          {futureError}
+        </AppText>
+      ) : null}
 
       <Card style={styles.card}>
         <Field
@@ -135,6 +159,14 @@ function WeightForm({
         />
       </Card>
 
+      <TextField
+        label="メモ（任意）"
+        value={note}
+        onChangeText={setNote}
+        maxLength={500}
+        placeholder="例：起床後・トイレの後"
+        testID="weight-note"
+      />
       <Button
         label="保存"
         onPress={() => void save()}
@@ -192,7 +224,6 @@ function Field({
 }
 
 const styles = StyleSheet.create({
-  when: { marginLeft: spacing.xs },
   card: { paddingVertical: spacing.xs },
   field: { paddingVertical: spacing.sm, gap: spacing.xs },
   fieldRow: { flexDirection: 'row', alignItems: 'center', minHeight: MIN_TAP },

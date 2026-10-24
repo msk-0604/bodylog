@@ -73,9 +73,10 @@ SQLite へのアクセスは単一接続をミューテックスで直列化し�
 
 1. 画面 → リポジトリ → SQLite に即時書き込み → UI即時反映（通信を待たない）。
 2. 同期対象テーブルの各行は `rev`（ローカル変更ごとに+1）と `synced_rev`（サーバー反映済みのrev）を持つ。`rev > synced_rev` が未送信。専用のアウトボックステーブル（当初案の `sync_operations`）の代わりにこの方式を採用し、同じ行の連続編集を1回の送信にまとめる。
-3. 同期エンジンは未送信行を親→子の順（profiles, nutrition_goals, custom_foods, meal_templates, meal_template_items, meal_entries, meal_items, food_favorites, body_measurements）に `upsert (on conflict id)` で送信。IDはクライアント生成のUUIDなので**再送しても重複しない**（レスポンス喪失時の再送もテスト済み）。送信中に編集された行は `synced_rev` を進めない。
+3. 同期エンジンは未送信行を親→子の順（profiles, user_preferences, nutrition_goals, custom_foods, meal_templates, meal_template_items, meal_entries, meal_items, food_favorites, body_measurements, exercise_entries, exercise_sets）に `upsert (on conflict id)` で送信。1ユーザー1行のテーブル（`profiles`, `user_preferences`）は `mode: 'update'` で所有者列（`id` / `user_id`）をキーに `update` する（行はサインアップ時にサーバーが作成）。SQLiteの 0/1 は送信時に boolean へ変換する（`booleans` 設定）。IDはクライアント生成のUUIDなので**再送しても重複しない**（レスポンス喪失時の再送もテスト済み）。送信中に編集された行は `synced_rev` を進めない。
 4. 通信・サーバー障害は指数バックオフ（2秒〜最大15分、ジッター付き）で再試行。サーバーが拒否した行（無料枠超過・制約違反）は1行ずつ切り分けて `sync_error` を記録し、他の行は同期を続ける。拒否された行は編集されるまで再送しない。
 5. 同期のきっかけ：ローカル書き込み後（1.5秒デバウンス）・アプリ復帰時・ネットワーク復帰時（NetInfo）・ホームのプルリフレッシュ・マイページ「データ同期」。
+6. 同期中に新しい書き込みがあった場合は、実行中の同期の終了後にもう一度同期する（取りこぼし防止。`syncService.test.ts`）。
 
 ### 4.2 読み込み（pull）
 
@@ -99,12 +100,25 @@ SQLite へのアクセスは単一接続をミューテックスで直列化し�
 - 食品マスタ全体は保存しない。最近使った食品・お気に入り・テンプレート内の食品・ユーザー登録食品のみSQLiteに保持。
 - 検索はオンライン時に RPC `search_foods`。オフライン時はローカルキャッシュのみを検索し、その旨を表示。
 
+### 4.5 端末ローカルの設定（同期しない）
+
+- 通知設定（`notification_settings`：種類・ON/OFF・時刻）は**端末ごと**に保存し、同期しない。通知は持ち歩く端末の性質（OSの許可・時刻の好み）に依存するため。サーバーの `notification_settings` テーブルは現在未使用（将来の端末間共有用に残す）。
+- ログアウト・アカウント削除・アカウント切替で他のユーザーデータと同様に消去し、予約済みの通知も取り消す。
+
 ## 5. 日付・タイムゾーン
 
 - 記録は「端末のローカル日付（`*_on`）」「瞬間（`*_at`, timestamptz）」「IANAタイムゾーン」を保存。
 - 集計はローカル日付で行う → 旅行やタイムゾーン変更で過去の日次集計が動かない。
 - 日付キーの加減算はUTC演算で行いDSTの影響を受けない（`domain/date.ts`）。
 - 「今日」はアプリ復帰時と0:00に更新（`lib/useToday.ts`）。
+
+## 5.1 ローカル通知（実装済み・`src/features/notifications/scheduler.ts`）
+
+- `expo-notifications` のローカル通知のみ（プッシュトークン・サーバー送信なし）。Androidはチャンネル `reminders`。
+- 5種類（朝の体重測定・朝食・昼食・夕食・1日の振り返り）を `DAILY` トリガーで予約。識別子 `reminder-<kind>`。変更のたびに自分の識別子だけを取り消して再予約（直列化して重複予約を防止）。
+- 許可は**ユーザーが通知をONにした時だけ**要求。拒否済みなら再要求せず、端末の設定を開く案内を表示。
+- 再予約のタイミング：サインイン完了時（アプリ起動時）・アプリ復帰時（OS設定で許可が変わった場合に対応）・設定変更時。`DAILY` は端末のローカル時刻で発火するため、タイムゾーン変更後も「毎日7:00」のまま。
+- 通知タップで該当画面（体重入力・食事・ホーム）を開く（オンボーディング完了後のみ）。
 
 ## 6. 課金（Phase 6）
 
@@ -117,6 +131,11 @@ SQLite へのアクセスは単一接続をミューテックスで直列化し�
   - イベント種別（INITIAL_PURCHASE, RENEWAL, CANCELLATION, UNCANCELLATION, BILLING_ISSUE, EXPIRATION, PRODUCT_CHANGE, …）に応じて `subscriptions` を更新。順序逆転に備え `event_at` が古いイベントで状態を巻き戻さない。必要に応じて RevenueCat REST API で最新状態を再取得。
 - 権限の正: `public.is_premium(uid)`（DB関数）。アプリは `subscriptions` を読んで表示し、SDKの即時状態は補助のみ。
 - オフライン時: 最後に確認した状態と `expires_at` をキャッシュし、期限内のみPremium表示。
+- **Phase 6 の接続点**（Phase 4/5 時点）：
+  - `src/features/premium/usePlan.ts`：プラン判定（`subscriptions` を参照）。RevenueCat SDK の即時状態を補助として加える場所。
+  - `src/features/premium/premiumInfo.ts` の `showPremiumInfo(feature)`：Premium機能に触れた時の案内（現在はダイアログ）。Paywall（`/premium`）への遷移に置き換える唯一の入口。
+  - 呼び出し元：体重グラフの30日/90日/全期間、期間の統計、お気に入り・テンプレートの上限。
+  - 必要な設定（🔐 ユーザー操作）：App Store Connect / Play Console の月額商品、RevenueCat プロジェクト・Entitlement `premium`、公開SDKキー `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`（公開可）、Webhook の認証用秘密値（Supabase の Edge Function シークレットに登録。リポジトリには置かない）。
 
 ## 7. 認証（実装済み）
 

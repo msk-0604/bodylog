@@ -27,9 +27,16 @@ export class RemoteError extends Error {
 /** Server operations used by the sync engine (Supabase in the app, in-memory fake in tests). */
 export interface RemoteApi {
   upsert(table: string, rows: Row[], onConflict: string): Promise<void>;
-  updateProfile(userId: string, values: Row): Promise<void>;
+  /** Updates the user's single row of a server-created table (profiles, user_preferences). */
+  updateOwnRow(table: string, ownerColumn: string, userId: string, values: Row): Promise<void>;
   /** Rows of the user changed at or after `since` (ISO), ordered by updated_at ascending. */
-  pull(table: string, userId: string, since: string | null, limit: number): Promise<Row[]>;
+  pull(
+    table: string,
+    ownerColumn: string,
+    userId: string,
+    since: string | null,
+    limit: number,
+  ): Promise<Row[]>;
   fetchFoods(ids: string[]): Promise<MasterFoodRow[]>;
   searchFoods(normalizedQuery: string, limit: number): Promise<MasterFoodRow[]>;
 }

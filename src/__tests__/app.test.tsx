@@ -154,7 +154,8 @@ describe('weight', () => {
 
     await fireEvent.changeText(screen.getByTestId('weight-input'), '６９．４');
     await fireEvent.press(screen.getByTestId('weight-save-button'));
-    expect(await screen.findByText('69.4 kg')).toBeTruthy();
+    // shown in the goal card (現在) and the history list
+    expect((await screen.findAllByText('69.4 kg')).length).toBeGreaterThanOrEqual(2);
     const rows = await mockDb!.all<{ weight_kg: number }>(
       'SELECT weight_kg FROM body_measurements WHERE deleted_at IS NULL ORDER BY measured_at',
     );

@@ -20,7 +20,16 @@ type TableConfig = {
   onConflict: string;
   /** owner column used to scope rows */
   owner: 'user_id' | 'id';
+  /**
+   * 'update': one row per user that the server creates (profiles, user_preferences); the app only
+   * updates it and the owner column is the key. Default: upsert by client-generated `id`.
+   */
+  mode?: 'update';
+  /** boolean columns (stored as 0/1 in SQLite) */
+  booleans?: readonly string[];
 };
+
+const keyOf = (cfg: TableConfig) => (cfg.mode === 'update' ? cfg.owner : 'id');
 
 const COMMON = ['id', 'user_id', 'created_at'] as const;
 
@@ -43,6 +52,15 @@ export const SYNC_TABLES: readonly TableConfig[] = [
       'privacy_accepted_at',
       'onboarding_completed_at',
     ],
+    mode: 'update',
+  },
+  {
+    table: 'user_preferences',
+    owner: 'user_id',
+    onConflict: 'user_id',
+    mode: 'update',
+    columns: ['include_exercise_in_budget', 'week_starts_on'],
+    booleans: ['include_exercise_in_budget'],
   },
   {
     table: 'nutrition_goals',
@@ -152,35 +170,71 @@ export const SYNC_TABLES: readonly TableConfig[] = [
       'deleted_at',
     ],
   },
+  {
+    table: 'exercise_entries',
+    owner: 'user_id',
+    onConflict: 'id',
+    columns: [
+      ...COMMON,
+      'exercise_type',
+      'name',
+      'performed_at',
+      'performed_on',
+      'time_zone',
+      'duration_min',
+      'kcal',
+      'kcal_is_estimated',
+      'mets',
+      'note',
+      'deleted_at',
+    ],
+    booleans: ['kcal_is_estimated'],
+  },
+  {
+    table: 'exercise_sets',
+    owner: 'user_id',
+    onConflict: 'id',
+    columns: [
+      ...COMMON,
+      'exercise_entry_id',
+      'exercise_name',
+      'set_number',
+      'weight_kg',
+      'reps',
+      'deleted_at',
+    ],
+  },
 ];
 
 const PUSH_BATCH = 200;
 const PULL_PAGE = 1000;
 
-type LocalRow = Record<string, SqlValue> & { id: string; rev: number };
+type LocalRow = Record<string, SqlValue> & { rev: number };
 
 export type SyncResult = { pushed: number; rejected: number; pulled: number };
 
-function pick(row: Record<string, SqlValue>, cols: readonly string[]): Row {
+function pick(cfg: TableConfig, row: Record<string, SqlValue>, cols: readonly string[]): Row {
   const out: Row = {};
-  for (const c of cols) out[c] = row[c] ?? null;
+  for (const c of cols) {
+    const v = row[c] ?? null;
+    out[c] = cfg.booleans?.includes(c) && v !== null ? Number(v) === 1 : v;
+  }
   return out;
 }
 
 async function markSynced(
   db: SqlDb,
-  table: string,
+  cfg: TableConfig,
   rows: readonly LocalRow[],
   error: string | null,
 ) {
+  const key = keyOf(cfg);
   await db.transaction(async (tx) => {
     for (const r of rows) {
-      await tx.run(`UPDATE ${table} SET synced_rev = ?, sync_error = ? WHERE id = ? AND rev = ?`, [
-        r.rev,
-        error,
-        r.id,
-        r.rev,
-      ]);
+      await tx.run(
+        `UPDATE ${cfg.table} SET synced_rev = ?, sync_error = ? WHERE ${key} = ? AND rev = ?`,
+        [r.rev, error, r[key] ?? null, r.rev],
+      );
     }
   });
 }
@@ -202,12 +256,12 @@ async function pushTable(db: SqlDb, remote: RemoteApi, userId: string, cfg: Tabl
     if (rows.length === 0) break;
 
     const send = async (batch: LocalRow[]) => {
-      if (cfg.table === 'profiles') {
-        await remote.updateProfile(userId, pick(batch[0]!, cfg.columns));
+      if (cfg.mode === 'update') {
+        await remote.updateOwnRow(cfg.table, cfg.owner, userId, pick(cfg, batch[0]!, cfg.columns));
       } else {
         await remote.upsert(
           cfg.table,
-          batch.map((r) => pick(r, cfg.columns)),
+          batch.map((r) => pick(cfg, r, cfg.columns)),
           cfg.onConflict,
         );
       }
@@ -215,7 +269,7 @@ async function pushTable(db: SqlDb, remote: RemoteApi, userId: string, cfg: Tabl
 
     try {
       await send(rows);
-      await markSynced(db, cfg.table, rows, null);
+      await markSynced(db, cfg, rows, null);
       pushed += rows.length;
     } catch (e) {
       if (!(e instanceof RemoteError) || e.kind !== 'rejected') throw e;
@@ -223,11 +277,11 @@ async function pushTable(db: SqlDb, remote: RemoteApi, userId: string, cfg: Tabl
       for (const row of rows) {
         try {
           await send([row]);
-          await markSynced(db, cfg.table, [row], null);
+          await markSynced(db, cfg, [row], null);
           pushed++;
         } catch (e2) {
           if (!(e2 instanceof RemoteError) || e2.kind !== 'rejected') throw e2;
-          await markSynced(db, cfg.table, [row], rejectionMessage(e2));
+          await markSynced(db, cfg, [row], rejectionMessage(e2));
           rejected++;
         }
       }
@@ -238,12 +292,13 @@ async function pushTable(db: SqlDb, remote: RemoteApi, userId: string, cfg: Tabl
 }
 
 async function applyPulledRow(db: SqlDb, cfg: TableConfig, row: Row) {
-  const cols = cfg.table === 'profiles' ? ['id', 'created_at', ...cfg.columns] : [...cfg.columns];
+  const key = keyOf(cfg);
+  const cols = cfg.mode === 'update' ? [key, 'created_at', ...cfg.columns] : [...cfg.columns];
   const updatedAt = String(row.updated_at ?? new Date().toISOString());
   await db.transaction(async (tx) => {
     const local = await tx.get<{ rev: number; synced_rev: number }>(
-      `SELECT rev, synced_rev FROM ${cfg.table} WHERE id = ?`,
-      [String(row.id)],
+      `SELECT rev, synced_rev FROM ${cfg.table} WHERE ${key} = ?`,
+      [String(row[key])],
     );
     if (local && local.rev > local.synced_rev) return; // unpushed local change wins until pushed
 
@@ -262,15 +317,17 @@ async function applyPulledRow(db: SqlDb, cfg: TableConfig, row: Row) {
       const v = row[c];
       return v === undefined || v === null
         ? null
-        : typeof v === 'object'
-          ? JSON.stringify(v)
-          : (v as SqlValue);
+        : typeof v === 'boolean'
+          ? Number(v)
+          : typeof v === 'object'
+            ? JSON.stringify(v)
+            : (v as SqlValue);
     });
     const all = [...cols, 'rev', 'synced_rev', 'sync_error', 'updated_at'];
     await tx.run(
       `INSERT INTO ${cfg.table} (${all.join(', ')}) VALUES (${all.map(() => '?').join(', ')})
-       ON CONFLICT (id) DO UPDATE SET ${all
-         .filter((c) => c !== 'id')
+       ON CONFLICT (${key}) DO UPDATE SET ${all
+         .filter((c) => c !== key)
          .map((c) => `${c} = excluded.${c}`)
          .join(', ')}`,
       [...values, rev, rev, null, updatedAt],
@@ -286,7 +343,7 @@ async function pullTable(db: SqlDb, remote: RemoteApi, userId: string, cfg: Tabl
   let cursor = cursorRow?.cursor ?? null;
   let pulled = 0;
   for (;;) {
-    const rows = await remote.pull(cfg.table, userId, cursor, PULL_PAGE);
+    const rows = await remote.pull(cfg.table, cfg.owner, userId, cursor, PULL_PAGE);
     for (const row of rows) await applyPulledRow(db, cfg, row);
     pulled += rows.length;
     const last = rows.at(-1)?.updated_at;

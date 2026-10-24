@@ -9,12 +9,14 @@ export type CardProps = {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   padded?: boolean;
+  testID?: string;
 };
 
-export function Card({ children, style, padded = true }: CardProps) {
+export function Card({ children, style, padded = true, testID }: CardProps) {
   const { colors, scheme } = useTheme();
   return (
     <View
+      testID={testID}
       style={[
         styles.card,
         { backgroundColor: colors.surface },

@@ -38,14 +38,14 @@ export function createSupabaseRemote(supabase: SupabaseClient): RemoteApi {
     async upsert(table, rows, onConflict) {
       await run(supabase.from(table).upsert(rows, { onConflict, ignoreDuplicates: false }));
     },
-    async updateProfile(userId, values) {
-      await run(supabase.from('profiles').update(values).eq('id', userId));
+    async updateOwnRow(table, ownerColumn, userId, values) {
+      await run(supabase.from(table).update(values).eq(ownerColumn, userId));
     },
-    async pull(table, userId, since, limit) {
+    async pull(table, ownerColumn, userId, since, limit) {
       let q = supabase
         .from(table)
         .select('*')
-        .eq(table === 'profiles' ? 'id' : 'user_id', userId)
+        .eq(ownerColumn, userId)
         .order('updated_at', { ascending: true })
         .limit(limit);
       if (since) q = q.gte('updated_at', since);

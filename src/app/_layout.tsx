@@ -2,6 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import {
   DarkTheme,
   DefaultTheme,
+  router,
   SplashScreen,
   Stack,
   ThemeProvider,
@@ -10,12 +11,13 @@ import {
 } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo } from 'react';
-import { View } from 'react-native';
+import { AppState, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Button, EmptyState, ErrorState, LoadingView } from '@/components/ui';
 import { initSession, retryInitialSync, signOut, useSession } from '@/features/auth/session';
+import { listenForReminderTaps, rescheduleReminders } from '@/features/notifications/scheduler';
 import { isSupabaseConfigured } from '@/lib/config';
 import { queryClient, registerAppFocusManager } from '@/lib/queryClient';
 import { AppThemeProvider, spacing, useTheme } from '@/theme';
@@ -53,6 +55,20 @@ function RootNavigator() {
   useEffect(() => {
     if (status !== 'initializing') SplashScreen.hideAsync().catch(() => {});
   }, [status]);
+
+  const canOpenReminder = status === 'ready' && onboarded && !recovery;
+  useEffect(() => {
+    if (!canOpenReminder) return;
+    const stopTaps = listenForReminderTaps((route) => router.navigate(route));
+    // Permission may have been changed in the system settings while the app was in background.
+    const appState = AppState.addEventListener('change', (s) => {
+      if (s === 'active') void rescheduleReminders();
+    });
+    return () => {
+      stopTaps();
+      appState.remove();
+    };
+  }, [canOpenReminder]);
 
   const navTheme = useMemo<NavigationTheme>(() => {
     const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
@@ -102,6 +118,9 @@ function RootNavigator() {
         <Stack.Protected guard={ready && onboarded && !recovery}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="weight-entry" options={MODAL} />
+          <Stack.Screen name="exercise-entry" options={MODAL} />
+          <Stack.Screen name="calendar" options={MODAL} />
+          <Stack.Screen name="notifications" options={MODAL} />
           <Stack.Screen name="food/[id]" options={MODAL} />
           <Stack.Screen name="food-search" options={MODAL} />
           <Stack.Screen name="meal-item/[id]" options={MODAL} />

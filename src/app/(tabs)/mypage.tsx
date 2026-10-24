@@ -3,10 +3,13 @@ import { router } from 'expo-router';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { AppText, Card, ListGroup, ListRow, Screen } from '@/components/ui';
+import { writeLocal } from '@/data/hooks';
+import { savePreferences } from '@/data/repo/settings';
 import { syncNow, useSyncStatus } from '@/data/sync/syncService';
 import { formatTimeJa } from '@/domain/date';
 import { FREE_LIMITS } from '@/domain/entitlements';
 import { pendingChanges, signOut, useSession } from '@/features/auth/session';
+import { usePreferences, useReminders } from '@/features/exercise/hooks';
 import { usePlan } from '@/features/premium/usePlan';
 import { useGoal, useProfile } from '@/features/profile/hooks';
 import { isLocalMode } from '@/lib/config';
@@ -35,6 +38,18 @@ export default function MyPageScreen() {
   const profile = useProfile().data;
   const goal = useGoal(useToday()).data;
   const local = isLocalMode();
+  const weekStartsOn = usePreferences().data?.weekStartsOn ?? 1;
+  const reminderCount = (useReminders().data ?? []).filter((r) => r.enabled).length;
+
+  const chooseWeekStart = () => {
+    const set = (v: 0 | 1) =>
+      void writeLocal((db, uid) => savePreferences(db, uid, { weekStartsOn: v }));
+    Alert.alert('週の始まり', 'カレンダーと週の集計に使います。', [
+      { text: '月曜日', onPress: () => set(1) },
+      { text: '日曜日', onPress: () => set(0) },
+      { text: 'キャンセル', style: 'cancel' },
+    ]);
+  };
 
   const logout = async () => {
     const pending = await pendingChanges();
@@ -102,7 +117,18 @@ export default function MyPageScreen() {
           onPress={() => router.push('/goals')}
           testID="row-goals"
         />
-        <ListRow title="通知設定" value={SOON} disabled />
+        <ListRow
+          title="通知設定"
+          value={reminderCount > 0 ? `${reminderCount}件オン` : 'オフ'}
+          onPress={() => router.push('/notifications')}
+          testID="row-notifications"
+        />
+        <ListRow
+          title="週の始まり"
+          value={weekStartsOn === 0 ? '日曜日' : '月曜日'}
+          onPress={chooseWeekStart}
+          testID="row-week-start"
+        />
         <ListRow title="単位" value="kg / cm / kcal" />
         <ListRow
           title="データ同期"
