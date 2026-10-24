@@ -22,6 +22,7 @@ jest.mock('@/lib/config', () => ({
   isSupabaseConfigured: () => true,
   isLocalMode: () => false,
   LOCAL_USER_ID: 'local-user',
+  revenueCatKeyFor: () => null, // billing not configured in these tests
 }));
 
 const mockSync = { calls: 0, fail: false };

@@ -120,22 +120,15 @@ SQLite へのアクセスは単一接続をミューテックスで直列化し�
 - 再予約のタイミング：サインイン完了時（アプリ起動時）・アプリ復帰時（OS設定で許可が変わった場合に対応）・設定変更時。`DAILY` は端末のローカル時刻で発火するため、タイムゾーン変更後も「毎日7:00」のまま。
 - 通知タップで該当画面（体重入力・食事・ホーム）を開く（オンボーディング完了後のみ）。
 
-## 6. 課金（Phase 6）
+## 6. 課金（実装済み・実ストア未検証・詳細は docs/BILLING.md）
 
-- RevenueCat（`react-native-purchases`）。Entitlement `premium`、月額商品1つ。
-- アプリ: Offerings からストア価格を取得して表示（価格をハードコードしない）。購入・復元・管理リンク。
-- RevenueCat の `appUserID` = Supabase の `auth.uid()`（ログイン時に `logIn`）。アカウント切替時は `logOut`。
-- サーバー: Edge Function `revenuecat-webhook`
-  - `Authorization` ヘッダーを RevenueCat ダッシュボードで設定した秘密値と定数時間比較（実装時に公式仕様を再確認）。
-  - `subscription_events.id = event.id` で重複を無視（冪等）。
-  - イベント種別（INITIAL_PURCHASE, RENEWAL, CANCELLATION, UNCANCELLATION, BILLING_ISSUE, EXPIRATION, PRODUCT_CHANGE, …）に応じて `subscriptions` を更新。順序逆転に備え `event_at` が古いイベントで状態を巻き戻さない。必要に応じて RevenueCat REST API で最新状態を再取得。
-- 権限の正: `public.is_premium(uid)`（DB関数）。アプリは `subscriptions` を読んで表示し、SDKの即時状態は補助のみ。
-- オフライン時: 最後に確認した状態と `expires_at` をキャッシュし、期限内のみPremium表示。
-- **Phase 6 の接続点**（Phase 4/5 時点）：
-  - `src/features/premium/usePlan.ts`：プラン判定（`subscriptions` を参照）。RevenueCat SDK の即時状態を補助として加える場所。
-  - `src/features/premium/premiumInfo.ts` の `showPremiumInfo(feature)`：Premium機能に触れた時の案内（現在はダイアログ）。Paywall（`/premium`）への遷移に置き換える唯一の入口。
-  - 呼び出し元：体重グラフの30日/90日/全期間、期間の統計、お気に入り・テンプレートの上限。
-  - 必要な設定（🔐 ユーザー操作）：App Store Connect / Play Console の月額商品、RevenueCat プロジェクト・Entitlement `premium`、公開SDKキー `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`（公開可）、Webhook の認証用秘密値（Supabase の Edge Function シークレットに登録。リポジトリには置かない）。
+- RevenueCat（`react-native-purchases` 10.12.2）。Entitlement `premium`、月額商品1つ。ストアSDKは `src/features/premium/billing/` の `BillingClient` で抽象化（RevenueCat／ローカルモード用モック／未設定時の無効版）。
+- アプリ: Offering からストアの価格・期間を取得して表示（価格をハードコードしない）。購入・復元・サブスクリプション管理リンク。
+- RevenueCat の `appUserID` = Supabase の `auth.uid()`。SDKは最初から uid で configure（匿名ユーザーを作らない）、切替時は `logIn`、ログアウトで `logOut`。購入直前に appUserID を再確認。
+- サーバー: `revenuecat-webhook`（Authorization 定数時間比較・冪等・順序保護・REST再取得）、`subscription-sync`（購入/復元後・起動/復帰時の再確認）。書き込みは `apply_subscription_state()`（service_role のみ）。
+- 権限の正: `public.is_premium(uid)` と `subscriptions`。アプリは `subscriptions` を読んで判定し、SDKの購入成功だけでは解放しない（サーバー確認まで「確認中」）。
+- オフライン時: 最後にサーバーで確認した状態をユーザーごとにキャッシュし、`expires_at` まで使用。ログアウト・アカウント切替で削除。
+- Premium機能の入口は `showPremiumInfo(feature)`（→ `/premium`）に一本化。
 
 ## 7. 認証（実装済み）
 
@@ -143,7 +136,7 @@ SQLite へのアクセスは単一接続をミューテックスで直列化し�
 - 画面遷移は `Stack.Protected` で状態ごとに出し分け：未ログイン→(auth)、初回同期中→待機画面、未オンボーディング→onboarding、パスワード再設定中→reset-password、それ以外→タブ。保護ルートに直接来た場合は `+not-found` が状態に応じてリダイレクト。
 - Supabase 未設定の開発ビルドは「ローカルモード」（アカウントなし・同期なし）。リリースビルドは未設定だと起動しない。
 - 規約・プライバシーポリシーのバージョンと同意日時を `profiles` に保存。
-- アカウント削除: Edge Function `delete-account`（service_role はサーバー側のみ）で `auth.admin.deleteUser` → DBは CASCADE で全削除。削除前にストア解約の案内。
+- アカウント削除: Edge Function `delete-account`（service_role はサーバー側のみ）で `auth.admin.deleteUser` → DBは CASCADE で全削除（秘密キー設定時は RevenueCat 顧客も削除）。削除前にストア解約の案内。
 
 ## 8. セキュリティ
 

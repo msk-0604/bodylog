@@ -1,21 +1,22 @@
 # BODYLOG タスク一覧
 
-最終更新: 2026-10-24（Phase 4・5）
+最終更新: 2026-10-24（Phase 6・Phase 7準備）
 凡例: [x] 完了 / [~] 一部完了 / [ ] 未着手 / 🔐 ユーザーの承認・操作が必要
 
 ## 次に再開するとき
 
 1. `npm ci && npm run check`（typecheck / lint / test）が通ることを確認
 2. 本ファイルの「次の作業」から着手
-3. 仕様は docs/MVP_SPEC.md、構成は docs/ARCHITECTURE.md、DBは docs/DATABASE.md、食品データは docs/FOOD_DATA.md、Supabase は docs/SUPABASE_SETUP.md
+3. 仕様は docs/MVP_SPEC.md、構成は docs/ARCHITECTURE.md、DBは docs/DATABASE.md、食品データは docs/FOOD_DATA.md、Supabase は docs/SUPABASE_SETUP.md、課金は docs/BILLING.md、リリース前確認は docs/QA_CHECKLIST.md
 
 ## 次の作業（優先順）
 
 1. 🔐 Supabase ステージングプロジェクト作成 → docs/SUPABASE_SETUP.md の手順で接続 → §7 チェックリストを実機で実施
 2. 🔐 文部科学省の成分表Excelを取得し、利用条件を確認（docs/FOOD_DATA.md §2）→ 取り込み → 実データで検索・計算を確認
-3. 🔐 iOS / Android の Development Build（EAS）で実機確認（特にローカル通知の表示・タップ遷移・権限拒否時の案内）
-4. Phase 6（RevenueCat課金）：下記「Phase 6 着手前に必要なもの」を準備 → `react-native-purchases` 導入、Paywall `/premium`、購入・復元、Webhook、CSVエクスポート
-5. 🔐 METs値を国立健康・栄養研究所「改訂版 身体活動のメッツ（METs）表」の原典で再確認（`src/domain/exerciseTypes.ts` の VERIFY 注記）
+3. 🔐 ストア・RevenueCat の設定（docs/BILLING.md §5）→ Edge Functions デプロイとシークレット登録 → Sandbox購入テスト（BILLING.md §6）
+4. 🔐 iOS / Android の Development Build（EAS）で実機確認（通知・課金・同期。docs/QA_CHECKLIST.md）
+5. CSVエクスポート（Premium）・詳細栄養分析（Premium）の実装、EAS設定（Phase 8）
+6. 🔐 METs値を国立健康・栄養研究所「改訂版 身体活動のメッツ（METs）表」の原典で再確認（`src/domain/exerciseTypes.ts` の VERIFY 注記）
 
 ## ユーザー判断待ち 🔐
 
@@ -26,7 +27,9 @@
 - [ ] 食品成分表の利用条件・出典表記の確認（docs/FOOD_DATA.md §2）
 - [ ] 目標カロリー推定式・活動係数・調整幅の確認（docs/MVP_SPEC.md §8、栄養の専門家レビュー推奨）
 - [ ] 利用規約・プライバシーポリシー本文（現在アプリ内は「作成中」表示）
-- [ ] Apple Developer Program / Google Play Console / RevenueCat アカウント
+- [ ] Apple Developer Program / Google Play Console / RevenueCat アカウント、有料アプリ契約・税務・口座
+- [ ] 商品ID（例 `jp.bodylog.premium.monthly`）・価格（350円）・初回無料期間の有無
+- [ ] RevenueCat の Restore Behavior（推奨：Keep with original App User ID。docs/BILLING.md §3）
 - [ ] お問い合わせ窓口
 
 ## Phase 0 — 設計・環境確認 ✅
@@ -110,27 +113,34 @@
 - [ ] 🔐 実機での通知表示・タップ遷移・Androidの通知チャンネル確認
 - [ ] 🔐 実Supabaseでの2台同時利用の確認
 
-## Phase 6 — 課金
+## Phase 6 — 課金 ✅（実ストアでの購入は未検証）
 
-- [~] Premium判定（`subscriptions` を読む `usePlan`、オフライン時は最終状態を期限まで使用）
-- [x] Premium機能の入口を `showPremiumInfo()` に集約（グラフ期間・期間の統計・上限）→ Paywall遷移に差し替えるだけで接続可能
-- [ ] RevenueCat 導入・Paywall・購入/復元・Webhook・CSVエクスポート・課金テスト
-
-### Phase 6 着手前に必要なもの 🔐
-
-- App Store Connect / Google Play Console のアプリ登録と月額350円（税込）の自動更新サブスクリプション商品（商品IDの決定）
-- RevenueCat プロジェクト、Entitlement `premium`、Offering の作成、ストアとの連携（App Store の In-App Purchase Key、Google の Service Account）
-- 公開SDKキー `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`（`.env` に設定。公開可の値）
-- Webhook の認証用秘密値（Supabase の Edge Function シークレットに登録。リポジトリ・アプリには置かない）
-- `react-native-purchases` はネイティブモジュールのため Expo Go 不可 → Development Build が必要
-- 課金テスト用アカウント（Sandbox テスター / ライセンステスター）
+- [x] RevenueCat SDK 導入（`react-native-purchases` 10.12.2、iOS/Android。Expo Go 不可・Development Build が必要）
+- [x] 課金の抽象化（RevenueCat／ローカルモード用モック／キー未設定時は「準備中」）。公開キーのみ使用し `sk_` キーは拒否
+- [x] Premium購入画面 `/premium`：機能一覧、ストアの価格・請求周期・初回特典、購入・復元、自動更新・解約方法・返金、利用規約・プライバシーポリシーへの導線
+- [x] 価格・期間はストアの商品情報を表示し、期間不明・取得失敗時は購入ボタン無効（350円をハードコードしない）
+- [x] 購入処理（オフライン時は開始しない、キャンセルは無表示、承認待ち・購入済み・制限・失敗の案内、二重実行防止）
+- [x] 購入復元（端末に無くてもサーバーが知っていればPremium）
+- [x] サブスクリプション状態の取得（サーバーの `subscriptions`）とマイページ表示（次回更新日・自動更新オフ・支払い確認）
+- [x] 解約・期限切れ・返金・請求の問題の権限更新（Webhook／再確認、`is_premium`）
+- [x] 無料版とPremium版の機能制限（グラフ期間・期間の統計・お気に入り・テンプレート、サーバー側の上限）。Premium機能の入口は購入画面へ
+- [x] 課金状態のキャッシュ（ユーザーごと・期限まで）と再検証（起動・復帰・SDK更新通知・購入/復元後）
+- [x] アカウント切替時の権限混同防止（uidで configure・logIn/logOut、購入前の appUserID 確認、キャッシュのユーザー照合と削除）
+- [x] ストアのサブスクリプション管理画面への導線
+- [x] Webhook（Authorization 定数時間比較・fail closed、冪等、順序保護、REST再取得、TRANSFER、匿名ID無視）＋ `subscription-sync`
+- [x] アカウント削除時に RevenueCat 顧客も削除（秘密キー設定時）
+- [ ] 🔐 実ストア（Sandbox / ライセンステスター）での購入・更新・解約・返金テスト（docs/BILLING.md §6）
+- [ ] 🔐 Webhook の実環境での受信確認
+- [ ] CSVエクスポート・詳細栄養分析（Premium機能。現在「準備中」で購入画面でも宣伝しない）
 
 ## Phase 7 — 品質保証
 
 - [x] 単体テスト（栄養・丸め・体重・日付・区分・上限・権限・METs・正規化・目標推定・入力検証・セッション保存）
 - [x] リポジトリ／同期エンジンのテスト（実SQLite＝node:sqlite、サーバー挙動を再現したフェイク）
 - [x] 画面結合テスト（オンボーディング→検索→記録→編集、再起動後の保持、体重、アカウント削除、認証フロー）
-- [x] DBテスト（RLS・制約・上限・カスケード削除・同期ルール・食品取り込み）
+- [x] DBテスト（RLS・制約・上限・カスケード削除・同期ルール・食品取り込み・運動/設定・課金）
+- [x] 課金：購入画面・購入/キャンセル/エラー/オフライン/復元/期限切れの画面テスト、RevenueCatクライアントの対応表、権限キャッシュ、Webhook/同期関数のロジック
+- [x] Phase 7 準備レビュー（docs/QA_CHECKLIST.md：Supabase本番設定・食品データ・同期・通知実機項目・アカウント削除・RLS・ビルド・網羅性）
 - [ ] 実Supabaseとの結合テスト、E2E（Maestro等）
 - [ ] 🔐 iOS / Android 実機テスト
 
@@ -153,6 +163,14 @@
 | 2026-10-24 | Phase 4/5：Jest 18スイート144件（TZ=Asia/Tokyo）、domain/data 99件は TZ=America/New_York でも                 | 合格                                                     |
 | 2026-10-24 | Phase 4/5：DBテスト（10_rls / 20_sync_rules / 30_food_import / 40_exercise_preferences）                      | 合格                                                     |
 | 2026-10-24 | Phase 4/5：`expo export`（iOS / Android Hermes バンドル）、`expo config` で expo-notifications プラグイン解決 | 成功                                                     |
+| 2026-10-24 | Phase 6：`tsc` / ESLint / Prettier                                                                            | 合格                                                     |
+| 2026-10-24 | Phase 6：Jest 24スイート197件（TZ=Asia/Tokyo）、domain/data/features/server 148件は TZ=America/New_York でも  | 合格                                                     |
+| 2026-10-24 | Phase 6：カバレッジ 文83.8% / 分岐72.6% / 関数77.1% / 行86.7%                                                 | 計測                                                     |
+| 2026-10-24 | Phase 6：DBテスト 10 / 20 / 30 / 40 / 50_billing                                                              | 合格                                                     |
+| 2026-10-24 | Phase 6：Edge Functions 3本の `deno check`（Deno 2.5.6）                                                      | 合格（実行は未検証）                                     |
+| 2026-10-24 | Phase 6：`expo export`（iOS / Android）、`expo prebuild`（一時ディレクトリ・生成のみ）                        | 成功（ネイティブコンパイルは未実施）                     |
+| 2026-10-24 | Phase 6：Web開発サーバーで購入画面（ライト/ダーク）→ モック購入 → マイページがPremium表示                     | 確認済（モックストア）                                   |
+| —          | 実ストアでの購入・更新・解約・返金、Webhook受信                                                               | **未検証**                                               |
 | —          | ローカル通知の実機表示（iOS / Android）                                                                       | **未検証**（Jestではモックで検証）                       |
 | —          | 実Supabase（Auth・同期・Edge Function）                                                                       | **未検証**                                               |
 | —          | 文部科学省の実Excelの取り込み                                                                                 | **未実施**                                               |

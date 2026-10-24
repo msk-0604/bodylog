@@ -5,5 +5,6 @@ export type SubscriptionRow = { status: string; expires_at: string | null; entit
 export function isActivePremium(row: SubscriptionRow | null, now = new Date()): boolean {
   if (!row || row.entitlement !== 'premium' || !row.expires_at) return false;
   if (['expired', 'refunded', 'paused'].includes(row.status)) return false;
-  return new Date(row.expires_at) > now;
+  // 'infinity' = grant without an end date (stored by the server for lifetime/promotional)
+  return row.expires_at === 'infinity' || new Date(row.expires_at) > now;
 }

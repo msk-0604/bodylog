@@ -6,11 +6,14 @@ import { AppText, Card, ListGroup, ListRow, Screen } from '@/components/ui';
 import { writeLocal } from '@/data/hooks';
 import { savePreferences } from '@/data/repo/settings';
 import { syncNow, useSyncStatus } from '@/data/sync/syncService';
+import { BILLING_MESSAGES, describeSubscription } from '@/domain/billing';
 import { formatTimeJa } from '@/domain/date';
 import { FREE_LIMITS } from '@/domain/entitlements';
 import { pendingChanges, signOut, useSession } from '@/features/auth/session';
 import { usePreferences, useReminders } from '@/features/exercise/hooks';
-import { usePlan } from '@/features/premium/usePlan';
+import { openSubscriptionManagement, restorePremium } from '@/features/premium/actions';
+import { getBilling } from '@/features/premium/billing';
+import { usePremium } from '@/features/premium/entitlement';
 import { useGoal, useProfile } from '@/features/profile/hooks';
 import { isLocalMode } from '@/lib/config';
 import { formatKcal } from '@/domain/nutrition';
@@ -33,7 +36,28 @@ function syncLabel(s: ReturnType<typeof useSyncStatus.getState>): string {
 export default function MyPageScreen() {
   const version = Constants.expoConfig?.version ?? '—';
   const email = useSession((s) => s.email);
-  const plan = usePlan();
+  const premium = usePremium();
+  const plan = premium.plan;
+  const subscriptionLine = describeSubscription(premium.subscription);
+  const billingReady = getBilling().kind !== 'unavailable';
+
+  const restore = async () => {
+    const r = await restorePremium();
+    if (r.ok) Alert.alert('購入を復元しました', 'Premiumをご利用いただけます。');
+    else if (r.kind !== 'cancelled') {
+      const m = BILLING_MESSAGES[r.kind];
+      Alert.alert(m.title, m.body);
+    }
+  };
+
+  const manage = async () => {
+    if (!(await openSubscriptionManagement())) {
+      Alert.alert(
+        'ストアを開けませんでした',
+        'App Store または Google Play のアカウント設定から、サブスクリプションを管理できます。',
+      );
+    }
+  };
   const sync = useSyncStatus();
   const profile = useProfile().data;
   const goal = useGoal(useToday()).data;
@@ -94,12 +118,23 @@ export default function MyPageScreen() {
         <AppText variant="footnote" color="textSecondary">
           {local ? 'ローカルモード（開発用・アカウントなし）' : (email ?? '')}
         </AppText>
-        <AppText variant="title2">{plan === 'premium' ? 'Premium' : '無料プラン'}</AppText>
+        <AppText variant="title2" testID="plan-name">
+          {plan === 'premium' ? 'Premium' : '無料プラン'}
+        </AppText>
+        {plan === 'premium' && subscriptionLine ? (
+          <AppText variant="subhead" color="textSecondary" testID="plan-detail">
+            {subscriptionLine}
+          </AppText>
+        ) : null}
         {plan === 'free' ? (
           <AppText variant="subhead" color="textSecondary">
-            Premium（月額350円・税込）では、お気に入り・食事テンプレートが無制限（無料版はそれぞれ
-            {FREE_LIMITS.favorites}件・{FREE_LIMITS.templates}
-            件）、30日以上のグラフ、詳細分析、CSV出力をご利用いただけます。
+            Premiumでは、30日以上のグラフ・期間の統計に加え、お気に入り・食事テンプレートが無制限（無料版はそれぞれ
+            {FREE_LIMITS.favorites}件・{FREE_LIMITS.templates}件）になります。
+          </AppText>
+        ) : null}
+        {premium.source === 'cache' ? (
+          <AppText variant="caption" color="textTertiary">
+            オフラインのため、前回確認したプランを表示しています
           </AppText>
         ) : null}
       </Card>
@@ -139,9 +174,34 @@ export default function MyPageScreen() {
       </Group>
 
       <Group title="Premium">
-        <ListRow title="Premiumに登録" value={SOON} disabled />
-        <ListRow title="購入を復元" value={SOON} disabled />
-        <ListRow title="サブスクリプションの管理" value={SOON} disabled />
+        {plan === 'free' ? (
+          <ListRow
+            title="Premiumに登録"
+            value={billingReady ? undefined : SOON}
+            onPress={() => router.push('/premium')}
+            testID="row-premium"
+          />
+        ) : (
+          <ListRow
+            title="Premiumの内容"
+            onPress={() => router.push('/premium')}
+            testID="row-premium"
+          />
+        )}
+        <ListRow
+          title="購入を復元"
+          value={billingReady ? undefined : SOON}
+          disabled={!billingReady}
+          onPress={() => void restore()}
+          testID="row-restore"
+        />
+        <ListRow
+          title="サブスクリプションの管理"
+          value={billingReady || plan === 'premium' ? undefined : SOON}
+          disabled={!billingReady && plan !== 'premium'}
+          onPress={() => void manage()}
+          testID="row-manage-subscription"
+        />
         <ListRow title="データのエクスポート（CSV）" value={SOON} disabled />
       </Group>
 

@@ -4,7 +4,7 @@
 
 日本国内向けの食事・体重・運動記録アプリ（iOS / Android）。AI機能は搭載しない。基本無料、Premium 月額350円（税込）。
 
-> ステータス: **開発中（Phase 2〜5 実装済み）**。認証・SQLite保存・同期・食品検索/食事記録・体重グラフ・運動記録・カレンダー・ローカル通知が動作します（実Supabase・実機・成分表の実データは未検証）。進捗は [docs/TASKS.md](docs/TASKS.md)。
+> ステータス: **開発中（Phase 2〜6 実装済み）**。認証・SQLite保存・同期・食品検索/食事記録・体重グラフ・運動記録・カレンダー・ローカル通知・Premium課金（RevenueCat）が動作します（実Supabase・実機・実ストアでの購入・成分表の実データは未検証）。進捗は [docs/TASKS.md](docs/TASKS.md)。
 
 ## ドキュメント
 
@@ -29,7 +29,7 @@
 | TanStack Query | 5.104.5                                            |
 | Zustand        | 5.0.16                                             |
 | supabase-js    | 2.118.0（Phase 2 で接続）                          |
-| RevenueCat     | 未導入（Phase 6, `react-native-purchases`）        |
+| RevenueCat     | react-native-purchases 10.12.2（docs/BILLING.md）  |
 | Jest / RNTL    | jest 30.5.2 / @testing-library/react-native 14.1.0 |
 
 Expo モジュールは `npx expo install` で SDK 互換バージョンを解決しています（`node_modules/expo/bundledNativeModules.json`）。

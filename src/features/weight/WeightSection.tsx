@@ -30,7 +30,7 @@ import {
   type Metric,
 } from '@/domain/weightAnalysis';
 import { showPremiumInfo } from '@/features/premium/premiumInfo';
-import { usePlan } from '@/features/premium/usePlan';
+import { usePlan } from '@/features/premium/entitlement';
 import { useGoal, useWeights } from '@/features/profile/hooks';
 import { useToday } from '@/lib/useToday';
 import { spacing, useTheme } from '@/theme';

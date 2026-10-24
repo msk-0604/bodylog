@@ -29,7 +29,7 @@ import { FoodSearchResults } from '@/features/meals/FoodSearchResults';
 import { useFavorites, useMealItems, useRecentFoods, useTemplates } from '@/features/meals/hooks';
 import { useMealsUi } from '@/features/meals/mealsUi';
 import { openFood } from '@/features/meals/navigation';
-import { usePlan } from '@/features/premium/usePlan';
+import { usePlan } from '@/features/premium/entitlement';
 import { haptics } from '@/lib/haptics';
 import { useToday } from '@/lib/useToday';
 import { spacing, useTheme } from '@/theme';

@@ -18,6 +18,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Button, EmptyState, ErrorState, LoadingView } from '@/components/ui';
 import { initSession, retryInitialSync, signOut, useSession } from '@/features/auth/session';
 import { listenForReminderTaps, rescheduleReminders } from '@/features/notifications/scheduler';
+import { getBilling } from '@/features/premium/billing';
+import { revalidatePremium } from '@/features/premium/entitlement';
 import { isSupabaseConfigured } from '@/lib/config';
 import { queryClient, registerAppFocusManager } from '@/lib/queryClient';
 import { AppThemeProvider, spacing, useTheme } from '@/theme';
@@ -61,11 +63,18 @@ function RootNavigator() {
     if (!canOpenReminder) return;
     const stopTaps = listenForReminderTaps((route) => router.navigate(route));
     // Permission may have been changed in the system settings while the app was in background.
+    // Renewals, cancellations and refunds reach the server via the webhook; re-read the plan
+    // on launch / foreground and whenever the store SDK reports a change.
+    void revalidatePremium();
+    const stopBilling = getBilling().onChange(() => void revalidatePremium(true));
     const appState = AppState.addEventListener('change', (s) => {
-      if (s === 'active') void rescheduleReminders();
+      if (s !== 'active') return;
+      void rescheduleReminders();
+      void revalidatePremium();
     });
     return () => {
       stopTaps();
+      stopBilling();
       appState.remove();
     };
   }, [canOpenReminder]);
@@ -121,6 +130,7 @@ function RootNavigator() {
           <Stack.Screen name="exercise-entry" options={MODAL} />
           <Stack.Screen name="calendar" options={MODAL} />
           <Stack.Screen name="notifications" options={MODAL} />
+          <Stack.Screen name="premium" options={MODAL} />
           <Stack.Screen name="food/[id]" options={MODAL} />
           <Stack.Screen name="food-search" options={MODAL} />
           <Stack.Screen name="meal-item/[id]" options={MODAL} />

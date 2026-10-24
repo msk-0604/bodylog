@@ -132,13 +132,13 @@ describe('weight', () => {
     ).toEqual([{ measured_on: yesterday, note: '外食の翌日' }]);
   });
 
-  it('locks 30-day and longer graphs on the free plan', async () => {
-    const alert = jest.spyOn(Alert, 'alert');
+  it('locks 30-day and longer graphs on the free plan and opens the paywall', async () => {
     await start();
     await fireEvent.press(screen.getByTestId('tab-records'));
-    await fireEvent.press(await screen.findByLabelText('30日（Premium）'));
-    expect(alert).toHaveBeenCalledWith('Premiumの機能です', expect.stringContaining('月額350円'));
     expect(screen.queryByTestId('period-stats')).toBeNull();
+    await fireEvent.press(await screen.findByLabelText('30日（Premium）'));
+    expect(await screen.findByTestId('premium-screen')).toBeTruthy();
+    expect(screen.getByTestId('premium-feature')).toHaveTextContent(/30日・90日・全期間のグラフ/);
   });
 });
 

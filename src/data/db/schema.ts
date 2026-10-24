@@ -277,5 +277,7 @@ export const USER_TABLES = [
 export async function wipeUserData(db: SqlDb): Promise<void> {
   await db.transaction(async (tx) => {
     for (const t of USER_TABLES) await tx.exec(`DELETE FROM ${t}`);
+    // cached Premium answers belong to an account too
+    await tx.exec("DELETE FROM meta WHERE key LIKE 'plan_cache%'");
   });
 }

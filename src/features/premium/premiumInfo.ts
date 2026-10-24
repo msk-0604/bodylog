@@ -1,12 +1,9 @@
-import { Alert } from 'react-native';
+import { router } from 'expo-router';
 
 /**
- * Explains a Premium-only feature. Phase 6 replaces this with navigation to the paywall
- * (`/premium`), so every Premium gate already goes through this single function.
+ * Single entry point for "this is a Premium feature": opens the paywall with the feature name.
+ * (Name kept from Phase 4 so every gate goes through one function.)
  */
 export function showPremiumInfo(feature: string) {
-  Alert.alert(
-    'Premiumの機能です',
-    `${feature}はPremium（月額350円・税込）でご利用いただけます。記録や基本機能はこれまでどおり無料でご利用いただけます。`,
-  );
+  router.push({ pathname: '/premium', params: { feature } });
 }
