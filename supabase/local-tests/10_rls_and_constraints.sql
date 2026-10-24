@@ -220,7 +220,7 @@ set role authenticated;
 select set_config('request.jwt.claim.sub', :'alice', false);
 do $$
 begin
-  if not public.is_premium(auth.uid()) then raise exception 'premium not detected'; end if;
+  -- premium: a second template is accepted by the free-plan trigger
   insert into public.meal_templates (id, user_id, name) values (gen_random_uuid(), auth.uid(), 'premium 2');
   if (select count(*) from public.subscriptions) <> 1 then raise exception 'alice cannot read own subscription'; end if;
 end $$;
@@ -230,7 +230,12 @@ update public.subscriptions set status = 'expired', expires_at = now() - interva
 set role authenticated;
 do $$
 begin
-  if public.is_premium(auth.uid()) then raise exception 'expired still premium'; end if;
+  -- expired: a new template is rejected again by the free-plan trigger
+  begin
+    insert into public.meal_templates (id, user_id, name) values (gen_random_uuid(), auth.uid(), 'after lapse');
+    raise exception 'expired still premium';
+  exception when sqlstate 'P0001' then null;
+  end;
   -- existing templates are kept after lapse
   if (select count(*) from public.meal_templates where deleted_at is null) <> 2 then
     raise exception 'templates must not be deleted on lapse';

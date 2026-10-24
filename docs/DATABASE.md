@@ -45,6 +45,8 @@
 
 ## 3. 関数・トリガー
 
+権限（`20261027000000_function_privileges.sql`）: Supabase は新しい関数の実行権限を anon / authenticated に既定で付与するため、`search_foods`（authenticated）以外の実行権限を取り消し。`is_premium` はトリガー内部と service_role のみ（アプリは RLS で自分の `subscriptions` 行を読む）。
+
 課金（`20261026000000_billing.sql`、すべて `security definer`・`search_path=''`・service_role のみ実行可）:
 
 - `apply_subscription_state(user, status, store, product, period_type, expires_at, will_renew, event_id, event_at)`：`event_at` が最後に適用したものより古ければ無視（順序保護）。未知のユーザー・未購入ユーザーの「期限切れ」は行を作らない。
@@ -93,6 +95,7 @@
 - 目標は1日1行に収束（20_sync_rules）
 - 食品取り込みSQLの2回適用で重複しない・検索・NULL保持（30_food_import）
 - 課金：書込関数は service_role のみ（authenticated/anon は実行不可）、ユーザーは `subscriptions` を書けない・他人の行を読めない・イベントを読めない、購入→解約（期限まで有効）→猶予→期限切れ→再購入→返金の遷移、古いイベントで巻き戻らない、期限なし付与（infinity）、イベントの冪等記録（new/retry/duplicate）、アカウント削除で `subscriptions` 削除・イベント匿名化（50_billing）
+- セキュリティ監査（60_security_audit）：public の全テーブルで RLS 有効、ビューなし、security definer 関数は search_path 固定、anon はテーブル・関数とも権限なし、authenticated が実行できる関数は `search_foods` のみ、サーバー所有テーブルは書き込み不可、今後追加される関数も anon に既定で実行権限を与えない
 - 運動・セットの upsert（再送で重複しない）、`user_preferences` の更新、運動時間・重量・回数の CHECK 制約、論理削除した運動が復活しない、他ユーザーの運動・設定を読み書きできない（40_exercise_preferences）
 
 ### 端末SQLite（`src/data/db/schema.ts`）

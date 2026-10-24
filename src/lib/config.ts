@@ -1,3 +1,5 @@
+import { checkSupabaseAnonKey, checkSupabaseUrl } from './configCheck';
+
 /**
  * Public runtime configuration (inlined at build time from EXPO_PUBLIC_* env vars).
  * Only values that are safe to ship inside the app may appear here.
@@ -13,8 +15,9 @@ export const config = {
   privacyVersion: '2026-10-draft',
 };
 
+/** A service_role / secret key in the app bundle is treated as "not configured" (fail closed). */
 export const isSupabaseConfigured = (): boolean =>
-  /^https:\/\/.+/.test(config.supabaseUrl) && config.supabaseAnonKey.length > 20;
+  checkSupabaseUrl(config.supabaseUrl).ok && checkSupabaseAnonKey(config.supabaseAnonKey).ok;
 
 /**
  * Local mode: development builds without Supabase settings keep all data on the device

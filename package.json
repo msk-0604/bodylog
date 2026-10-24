@@ -10,6 +10,7 @@
     "expo-asset": "~58.0.18",
     "expo-constants": "~58.0.13",
     "expo-crypto": "~58.0.7",
+    "expo-dev-client": "~58.0.15",
     "expo-font": "~58.0.10",
     "expo-haptics": "~58.0.7",
     "expo-linking": "~58.0.14",
@@ -62,7 +63,8 @@
     "test:ci": "jest --ci --coverage=false",
     "check": "npm run typecheck && npm run lint && npm run test:ci",
     "foods:import": "node scripts/foods/import-mext.ts",
-    "db:test": "./scripts/db-test.sh"
+    "db:test": "./scripts/db-test.sh",
+    "env:check": "node scripts/check-env.ts"
   },
   "private": true,
   "jest": {

@@ -1,22 +1,21 @@
 # BODYLOG タスク一覧
 
-最終更新: 2026-10-24（Phase 6・Phase 7準備）
+最終更新: 2026-10-24（Phase 7）
 凡例: [x] 完了 / [~] 一部完了 / [ ] 未着手 / 🔐 ユーザーの承認・操作が必要
 
 ## 次に再開するとき
 
 1. `npm ci && npm run check`（typecheck / lint / test）が通ることを確認
 2. 本ファイルの「次の作業」から着手
-3. 仕様は docs/MVP_SPEC.md、構成は docs/ARCHITECTURE.md、DBは docs/DATABASE.md、食品データは docs/FOOD_DATA.md、Supabase は docs/SUPABASE_SETUP.md、課金は docs/BILLING.md、リリース前確認は docs/QA_CHECKLIST.md
+3. 仕様は docs/MVP_SPEC.md、構成は docs/ARCHITECTURE.md、DBは docs/DATABASE.md、食品データは docs/FOOD_DATA.md、Supabase は docs/SUPABASE_SETUP.md、課金は docs/BILLING.md、リリース前確認は docs/QA_CHECKLIST.md、**あなたが行う作業は docs/USER_ACTIONS.md**
 
 ## 次の作業（優先順）
 
-1. 🔐 Supabase ステージングプロジェクト作成 → docs/SUPABASE_SETUP.md の手順で接続 → §7 チェックリストを実機で実施
-2. 🔐 文部科学省の成分表Excelを取得し、利用条件を確認（docs/FOOD_DATA.md §2）→ 取り込み → 実データで検索・計算を確認
-3. 🔐 ストア・RevenueCat の設定（docs/BILLING.md §5）→ Edge Functions デプロイとシークレット登録 → Sandbox購入テスト（BILLING.md §6）
-4. 🔐 iOS / Android の Development Build（EAS）で実機確認（通知・課金・同期。docs/QA_CHECKLIST.md）
-5. CSVエクスポート（Premium）・詳細栄養分析（Premium）の実装、EAS設定（Phase 8）
-6. 🔐 METs値を国立健康・栄養研究所「改訂版 身体活動のメッツ（METs）表」の原典で再確認（`src/domain/exerciseTypes.ts` の VERIFY 注記）
+1. 🔐 docs/USER_ACTIONS.md §1〜§2：GitHub 設定、Supabase ステージング作成 → `db push` → `config push` → Edge Functions
+2. 🔐 USER_ACTIONS.md §3：GitHub Actions「Food data dry run」で成分表を検証 → ステージングに適用
+3. 🔐 USER_ACTIONS.md §4〜§6：App Store Connect / Google Play / RevenueCat の設定
+4. 🔐 USER_ACTIONS.md §7〜§8：EAS で development / preview ビルド → 実機テスト（QA_CHECKLIST §4、BILLING §6）→ 結果を共有
+5. 実機テストの結果を受けた修正、CSVエクスポート・詳細栄養分析（Premium）、Phase 8（ストア資料・アイコン）
 
 ## ユーザー判断待ち 🔐
 
@@ -133,16 +132,23 @@
 - [ ] 🔐 Webhook の実環境での受信確認
 - [ ] CSVエクスポート・詳細栄養分析（Premium機能。現在「準備中」で購入画面でも宣伝しない）
 
-## Phase 7 — 品質保証
+## Phase 7 — 品質保証（実機・実サービス未検証）
 
-- [x] 単体テスト（栄養・丸め・体重・日付・区分・上限・権限・METs・正規化・目標推定・入力検証・セッション保存）
+- [x] 単体テスト（栄養・丸め・体重・日付・区分・上限・権限・METs・正規化・目標推定・入力検証・セッション保存・課金・設定値検査）
 - [x] リポジトリ／同期エンジンのテスト（実SQLite＝node:sqlite、サーバー挙動を再現したフェイク）
-- [x] 画面結合テスト（オンボーディング→検索→記録→編集、再起動後の保持、体重、アカウント削除、認証フロー）
-- [x] DBテスト（RLS・制約・上限・カスケード削除・同期ルール・食品取り込み・運動/設定・課金）
-- [x] 課金：購入画面・購入/キャンセル/エラー/オフライン/復元/期限切れの画面テスト、RevenueCatクライアントの対応表、権限キャッシュ、Webhook/同期関数のロジック
-- [x] Phase 7 準備レビュー（docs/QA_CHECKLIST.md：Supabase本番設定・食品データ・同期・通知実機項目・アカウント削除・RLS・ビルド・網羅性）
-- [ ] 実Supabaseとの結合テスト、E2E（Maestro等）
-- [ ] 🔐 iOS / Android 実機テスト
+- [x] 画面結合テスト（オンボーディング→検索→記録→編集、再起動後の保持、体重、運動、カレンダー、通知、課金、アカウント削除、認証フロー）
+- [x] DBテスト（RLS・制約・上限・カスケード削除・同期ルール・食品取り込み・運動/設定・課金・セキュリティ監査）
+- [x] Supabase：`supabase/config.toml`（認証設定・Edge Functions の JWT 設定）、関数の実行権限の最小化（マイグレーション4）、カタログ監査テスト
+- [x] 公開設定の検査（`npm run env:check`、アプリ側でも service_role / secret キーを拒否）
+- [x] 食品データ：GitHub Actions のドライラン（MEXTのみ・SHA-256・件数照合・使い捨てDB）、レポートに SHA-256
+- [x] EAS：`eas.json`、`expo-dev-client`
+- [x] 総合QA（自動）：アカウント切替、1年分データの性能、アクセシビリティ監査、エラー画面
+- [x] あなたが行う作業の手順書（docs/USER_ACTIONS.md）
+- [ ] 🔐 実Supabase（ステージング）への適用と SUPABASE_SETUP §7 の確認
+- [ ] 🔐 成分表の実データ取り込み
+- [ ] 🔐 iOS / Android 実機テスト（認証・同期・オフライン・通知・課金・アカウント削除）
+- [ ] E2E（Maestro 等）の自動化、実機での VoiceOver / TalkBack 確認
+- [ ] 依存関係の脆弱性（Expo CLI 経由の node-forge / zod）：修正版の公開待ち
 
 ## Phase 8 — ストア公開準備
 
@@ -170,6 +176,12 @@
 | 2026-10-24 | Phase 6：Edge Functions 3本の `deno check`（Deno 2.5.6）                                                      | 合格（実行は未検証）                                     |
 | 2026-10-24 | Phase 6：`expo export`（iOS / Android）、`expo prebuild`（一時ディレクトリ・生成のみ）                        | 成功（ネイティブコンパイルは未実施）                     |
 | 2026-10-24 | Phase 6：Web開発サーバーで購入画面（ライト/ダーク）→ モック購入 → マイページがPremium表示                     | 確認済（モックストア）                                   |
+| 2026-10-24 | Phase 7：`tsc` / ESLint / Prettier                                                                            | 合格                                                     |
+| 2026-10-24 | Phase 7：Jest 29スイート207件（TZ=Asia/Tokyo）、158件は TZ=America/New_York でも                              | 合格                                                     |
+| 2026-10-24 | Phase 7：カバレッジ 文84.1% / 分岐73.0% / 関数77.5% / 行87.2%                                                 | 計測                                                     |
+| 2026-10-24 | Phase 7：DBテスト 10 / 20 / 30 / 40 / 50 / 60_security_audit（マイグレーション4本）                           | 合格（60 は修正前に失敗を確認）                          |
+| 2026-10-24 | Phase 7：Edge Functions 3本の `deno check`、`expo export`（iOS/Android）、`expo config`                       | 成功                                                     |
+| 2026-10-24 | Phase 7：`npm audit --omit=dev`                                                                               | high 5件（Expo CLI 経由・アプリ本体外・修正版なし）      |
 | —          | 実ストアでの購入・更新・解約・返金、Webhook受信                                                               | **未検証**                                               |
 | —          | ローカル通知の実機表示（iOS / Android）                                                                       | **未検証**（Jestではモックで検証）                       |
 | —          | 実Supabase（Auth・同期・Edge Function）                                                                       | **未検証**                                               |

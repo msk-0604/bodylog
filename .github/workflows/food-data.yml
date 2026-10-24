@@ -1,0 +1,99 @@
+name: Food data dry run
+
+# Downloads the official 日本食品標準成分表 Excel from the MEXT website, generates the
+# food_master SQL, applies it to a THROWAWAY PostgreSQL with all migrations and runs sanity
+# checks. It never touches Supabase: applying to staging/production is a manual, approved step
+# (docs/FOOD_DATA.md §4). Started by hand from the Actions tab.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Excel URL on www.mext.go.jp (本表, 全食品群)'
+        required: true
+      version:
+        description: 'Edition label stored with each food (e.g. 八訂増補2023)'
+        required: true
+      sheet:
+        description: 'Sheet name (empty = first sheet)'
+        required: false
+        default: ''
+      expect_count:
+        description: 'Published number of foods (empty = do not check)'
+        required: false
+        default: ''
+      sha256:
+        description: 'Expected SHA-256 of the file (empty = record only)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      INPUT_URL: ${{ inputs.url }}
+      INPUT_VERSION: ${{ inputs.version }}
+      INPUT_SHEET: ${{ inputs.sheet }}
+      INPUT_EXPECT: ${{ inputs.expect_count }}
+      INPUT_SHA: ${{ inputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Download from MEXT only
+        run: |
+          case "$INPUT_URL" in
+            https://www.mext.go.jp/*) ;;
+            *) echo "::error::URL must start with https://www.mext.go.jp/"; exit 1 ;;
+          esac
+          curl -fsSL --max-filesize 100000000 -o mext.xlsx "$INPUT_URL"
+          actual=$(sha256sum mext.xlsx | cut -d' ' -f1)
+          echo "sha256: $actual"
+          if [ -n "$INPUT_SHA" ] && [ "$INPUT_SHA" != "$actual" ]; then
+            echo "::error::SHA-256 mismatch (expected $INPUT_SHA)"; exit 1
+          fi
+
+      - name: Generate SQL and report
+        run: |
+          args=(--input mext.xlsx --version "$INPUT_VERSION" --out food_master.sql --report food_master_report.json)
+          [ -n "$INPUT_SHEET" ] && args+=(--sheet "$INPUT_SHEET")
+          [ -n "$INPUT_EXPECT" ] && args+=(--expect-count "$INPUT_EXPECT")
+          node scripts/foods/import-mext.ts "${args[@]}"
+
+      - name: Apply to a throwaway database and check
+        env:
+          BASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: |
+          psql "$BASE_URL" -v ON_ERROR_STOP=1 -q -c "create database foods_dry_run"
+          DB=postgres://postgres:postgres@localhost:5432/foods_dry_run
+          psql "$DB" -v ON_ERROR_STOP=1 -q -f supabase/local-tests/00_supabase_stub.sql
+          for f in supabase/migrations/*.sql; do psql "$DB" -v ON_ERROR_STOP=1 -q -f "$f"; done
+          psql "$DB" -v ON_ERROR_STOP=1 -q -f food_master.sql
+          psql "$DB" -v ON_ERROR_STOP=1 -q -f food_master.sql   # idempotent
+          psql "$DB" -v ON_ERROR_STOP=1 -At -c "select 'active foods', count(*) from public.food_master where is_active"
+          psql "$DB" -v ON_ERROR_STOP=1 -At -c "select 'unknown energy', count(*) from public.food_master where energy_kcal is null"
+          psql "$DB" -v ON_ERROR_STOP=1 -At -c "select name, energy_kcal, protein_g, fat_g, carbohydrate_g from public.food_master order by food_code limit 5"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: food-master-${{ github.run_id }}
+          path: |
+            food_master.sql
+            food_master_report.json
+          retention-days: 14
