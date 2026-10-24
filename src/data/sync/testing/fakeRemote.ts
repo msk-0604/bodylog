@@ -6,7 +6,11 @@ import { RemoteError, type RemoteApi, type Row } from '../remote';
 const LIMITS: Record<string, number> = { food_favorites: 10, meal_templates: 1 };
 
 /** Postgres boolean columns reject 0/1 sent as JSON numbers. */
-const BOOLEAN_COLUMNS = ['include_exercise_in_budget', 'kcal_is_estimated'];
+const BOOLEAN_COLUMNS = [
+  'include_exercise_in_budget',
+  'kcal_is_estimated',
+  'weigh_in_reminder_enabled',
+];
 function checkBooleans(row: Row) {
   for (const c of BOOLEAN_COLUMNS) {
     if (c in row && row[c] !== null && typeof row[c] !== 'boolean') {

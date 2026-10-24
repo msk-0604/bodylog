@@ -6,30 +6,58 @@ import {
   type ReminderKind,
   type ReminderSetting,
 } from '@/domain/reminders';
+import { parseReminderTime, toReminderTime, type WeighInReminder } from '@/domain/weighIn';
 
 import type { SqlDb } from '../db/types';
 import { insertRow, nowIso, updateRow } from './common';
 
 /* ---------------- user_preferences (synced) ---------------- */
 
-export type Preferences = { includeExerciseInBudget: boolean; weekStartsOn: 0 | 1 };
+export type Preferences = {
+  includeExerciseInBudget: boolean;
+  weekStartsOn: 0 | 1;
+  /** server-sent weigh-in reminder (synced between the user's devices) */
+  weighIn: WeighInReminder;
+  /** IANA zone the server uses for the reminder time */
+  timeZone: string;
+};
+
+type PrefsRow = {
+  include_exercise_in_budget: number;
+  week_starts_on: number;
+  weigh_in_reminder_enabled: number;
+  weigh_in_reminder_time: string;
+  time_zone: string;
+};
 
 export async function getPreferences(db: SqlDb, userId: string): Promise<Preferences> {
-  const r = await db.get<{ include_exercise_in_budget: number; week_starts_on: number }>(
-    'SELECT include_exercise_in_budget, week_starts_on FROM user_preferences WHERE user_id = ?',
+  const r = await db.get<PrefsRow>(
+    `SELECT include_exercise_in_budget, week_starts_on, weigh_in_reminder_enabled,
+            weigh_in_reminder_time, time_zone
+     FROM user_preferences WHERE user_id = ?`,
     [userId],
   );
   return {
     includeExerciseInBudget: Number(r?.include_exercise_in_budget ?? 0) === 1,
     weekStartsOn: Number(r?.week_starts_on ?? 1) === 0 ? 0 : 1,
+    weighIn: {
+      enabled: Number(r?.weigh_in_reminder_enabled ?? 0) === 1,
+      ...parseReminderTime(r?.weigh_in_reminder_time),
+    },
+    timeZone: r?.time_zone || 'Asia/Tokyo',
   };
 }
 
 export async function savePreferences(db: SqlDb, userId: string, p: Partial<Preferences>) {
-  const patch: Record<string, number> = {};
+  const patch: Record<string, number | string> = {};
   if (p.includeExerciseInBudget !== undefined)
     patch.include_exercise_in_budget = p.includeExerciseInBudget ? 1 : 0;
   if (p.weekStartsOn !== undefined) patch.week_starts_on = p.weekStartsOn;
+  if (p.weighIn !== undefined) {
+    patch.weigh_in_reminder_enabled = p.weighIn.enabled ? 1 : 0;
+    patch.weigh_in_reminder_time = toReminderTime(p.weighIn.hour, p.weighIn.minute);
+  }
+  if (p.timeZone !== undefined) patch.time_zone = p.timeZone;
   await db.transaction(async (tx) => {
     const exists = await tx.get('SELECT 1 FROM user_preferences WHERE user_id = ?', [userId]);
     if (exists) await updateRow(tx, 'user_preferences', userId, patch, 'user_id');
@@ -111,4 +139,13 @@ export async function dayMarks(
   );
   ex.forEach((r) => mark(r.d, 'exercise'));
   return map;
+}
+
+/** Whether a (non-deleted) weight record exists for the date (local records, synced or not). */
+export async function hasWeightOn(db: SqlDb, userId: string, date: DateKey): Promise<boolean> {
+  const r = await db.get(
+    'SELECT 1 FROM body_measurements WHERE user_id = ? AND measured_on = ? AND deleted_at IS NULL LIMIT 1',
+    [userId, date],
+  );
+  return !!r;
 }

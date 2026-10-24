@@ -180,9 +180,10 @@ describe('calendar', () => {
 describe('reminders', () => {
   it('defaults are off with sensible times', () => {
     const d = defaultReminders();
-    expect(d).toHaveLength(5);
+    // weigh-in is a server push (domain/weighIn.ts), not a local daily reminder
+    expect(d.map((r) => r.kind)).toEqual(['breakfast', 'lunch', 'dinner', 'daily_review']);
     expect(d.every((r) => !r.enabled)).toBe(true);
-    expect(d.find((r) => r.kind === 'weigh_in')).toMatchObject({ hour: 7, minute: 0 });
+    expect(d.find((r) => r.kind === 'breakfast')).toMatchObject({ hour: 8, minute: 30 });
   });
   it('time stepping wraps around midnight', () => {
     expect(stepTime(23, 50, 15)).toEqual({ hour: 0, minute: 5 });

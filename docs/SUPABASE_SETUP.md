@@ -16,15 +16,16 @@
 npx supabase@2.119.0 login
 npx supabase@2.119.0 link --project-ref <project-ref>
 npx supabase@2.119.0 db push --dry-run   # 適用されるマイグレーションの一覧だけを表示（変更しない）
-npx supabase@2.119.0 db push             # supabase/migrations/*.sql（4本）を適用
+npx supabase@2.119.0 db push             # supabase/migrations/*.sql（5本）を適用
 ```
 
-| マイグレーション                         | 内容                                              |
-| ---------------------------------------- | ------------------------------------------------- |
-| `20261024000000_initial_schema.sql`      | テーブル・RLS・無料枠トリガー・食品検索           |
-| `20261025000000_sync_rules.sql`          | 論理削除の復活禁止、upsert時の無料枠判定          |
-| `20261026000000_billing.sql`             | 課金状態の書き込み関数（service_role のみ）       |
-| `20261027000000_function_privileges.sql` | 関数の実行権限を最小化（anon は何も実行できない） |
+| マイグレーション                         | 内容                                                       |
+| ---------------------------------------- | ---------------------------------------------------------- |
+| `20261024000000_initial_schema.sql`      | テーブル・RLS・無料枠トリガー・食品検索                    |
+| `20261025000000_sync_rules.sql`          | 論理削除の復活禁止、upsert時の無料枠判定                   |
+| `20261026000000_billing.sql`             | 課金状態の書き込み関数（service_role のみ）                |
+| `20261027000000_function_privileges.sql` | 関数の実行権限を最小化（anon は何も実行できない）          |
+| `20261028000000_weigh_in_reminders.sql`  | 体重リマインダー：設定列・端末トークン・送信履歴・判定関数 |
 
 適用後の確認：
 
@@ -60,20 +61,28 @@ npx supabase functions deploy delete-account
 npx supabase functions deploy subscription-sync
 # RevenueCat は Supabase の JWT を送れないため、JWT検証を外し、関数内で Authorization ヘッダーを検証する
 npx supabase functions deploy revenuecat-webhook --no-verify-jwt
+# pg_cron から合言葉付きで呼ばれる（ユーザーのJWTではない）
+npx supabase functions deploy weigh-in-reminders --no-verify-jwt
 ```
 
-| 関数                 | 役割                                                                | 呼び出し元                           |
-| -------------------- | ------------------------------------------------------------------- | ------------------------------------ |
-| `delete-account`     | 本人のアカウント削除（＋RevenueCat顧客の削除：秘密キー設定時）      | アプリ（ユーザーJWT）                |
-| `subscription-sync`  | 呼び出し元ユーザーの購入状態を RevenueCat REST API で再確認して保存 | アプリ（購入・復元後、起動・復帰時） |
-| `revenuecat-webhook` | RevenueCat Webhook を受け、`subscriptions` を更新（冪等・順序保護） | RevenueCat                           |
+| 関数                 | 役割                                                                 | 呼び出し元                           |
+| -------------------- | -------------------------------------------------------------------- | ------------------------------------ |
+| `delete-account`     | 本人のアカウント削除（＋RevenueCat顧客の削除：秘密キー設定時）       | アプリ（ユーザーJWT）                |
+| `subscription-sync`  | 呼び出し元ユーザーの購入状態を RevenueCat REST API で再確認して保存  | アプリ（購入・復元後、起動・復帰時） |
+| `revenuecat-webhook` | RevenueCat Webhook を受け、`subscriptions` を更新（冪等・順序保護）  | RevenueCat                           |
+| `weigh-in-reminders` | 体重未記録のユーザーに Expo プッシュを送信（1日1回・再送・受領確認） | pg_cron（5分ごと）                   |
 
 シークレット（**リポジトリ・アプリには置かない**。CLIで登録）：
 
 ```bash
 npx supabase secrets set REVENUECAT_WEBHOOK_AUTH='<32文字以上のランダム文字列>'
 npx supabase secrets set REVENUECAT_SECRET_API_KEY='<RevenueCat の Secret API key (v1)>'
+npx supabase secrets set REMINDER_CRON_SECRET='<32文字以上のランダム文字列>'
+# 任意：Expo の「Enhanced push security」を有効にした場合のみ
+npx supabase secrets set EXPO_ACCESS_TOKEN='<Expo のアクセストークン>'
 ```
+
+体重リマインダーの定期実行：Database > Extensions で `pg_cron` と `pg_net` を有効にし、Vault に `project_url` と `reminder_cron_secret`（`REMINDER_CRON_SECRET` と同じ値）を登録してから、`supabase/manual/schedule_weigh_in_reminders.sql` を SQL Editor で1回実行します（手順はファイル冒頭）。
 
 `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` はEdge実行環境が自動提供します（手動で設定・共有しない）。課金の設定全体は docs/BILLING.md。
 
@@ -105,3 +114,5 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon / publishable key>
 - [ ] アカウント削除 → auth.users と全記録が削除される（`subscriptions` も削除、`subscription_events` は user_id が NULL になる）
 - [ ] Webhook：RevenueCat ダッシュボードの「Send test event」で 200 が返る。誤った Authorization では 401
 - [ ] Sandbox購入 → 数秒以内に `subscriptions` に行ができ、アプリが Premium になる（docs/BILLING.md §6）
+- [ ] `select * from cron.job_run_details order by start_time desc limit 5;` で weigh-in-reminders が5分ごとに成功している
+- [ ] 体重未記録のテストアカウントで設定時刻を過ぎると通知が届き、`reminder_deliveries` に1行（status=sent）、`push_messages` に端末ごとの結果が残る。記録済みのアカウントには届かない

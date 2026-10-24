@@ -87,9 +87,10 @@ npx supabase@2.119.0 config push                   # 認証設定を反映（差
 npx supabase@2.119.0 functions deploy delete-account
 npx supabase@2.119.0 functions deploy subscription-sync
 npx supabase@2.119.0 functions deploy revenuecat-webhook --no-verify-jwt
+npx supabase@2.119.0 functions deploy weigh-in-reminders --no-verify-jwt
 ```
 
-秘密情報の登録は §6 の RevenueCat 設定のあとに行います。
+秘密情報の登録は §6（RevenueCat）と §7-2（体重リマインダー）で行います。
 
 ### 2-5. アプリ用の公開値をメモ
 
@@ -219,9 +220,64 @@ npx supabase@2.119.0 functions deploy revenuecat-webhook --no-verify-jwt
    - 開発用ビルドは、パソコンで `npx expo start` を実行して接続して使います。
    - 課金や通知を本番に近い形で試すには、`--profile preview` のビルドを使います。
 
+## 7-2. 体重リマインダーのプッシュ通知（約60分）
+
+体重を記録していない日だけ、設定時刻にサーバーから通知を送るための設定です。§2・§7 が終わってから行います。
+
+**iOS（Apple Push Notification service）**
+
+1. ターミナルで `npx eas-cli@latest credentials` を実行し、**iOS** → 使うビルドプロファイル（まず `development`）→ **Push Notifications** を選びます。
+2. 「Apple アカウントでログインして作成」を選ぶと、APNs キーが自動で作成されて Expo に登録されます。
+   - このキーは**秘密情報**です。手元に `.p8` をダウンロードした場合も GitHub には置かないでください（`.gitignore` 済み）。
+
+**Android（Firebase Cloud Messaging）**
+
+1. https://console.firebase.google.com でプロジェクトを作成します（Google アナリティクスは不要）。
+2. **Android アプリを追加** → パッケージ名に `jp.bodylog.app`（§4-2 で変更した場合はその値）を入力 → `google-services.json` をダウンロードします。
+3. このファイルを EAS に「ファイル型」の環境変数として登録します。**GitHub には置きません**（`.gitignore` 済み）。
+
+   ```bash
+   npx eas-cli@latest env:create --environment development --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --visibility secret
+   ```
+
+   `preview` / `production` でも同じように登録します。コマンドが通らない場合は、expo.dev のプロジェクト → **Environment variables** で「File」として登録してください。
+
+4. Firebase → **プロジェクトの設定** → **サービス アカウント** → **新しい秘密鍵を生成**（JSON）します。
+5. `npx eas-cli@latest credentials` → **Android** → **Google Service Account** → **FCM V1** に、手順4の JSON をアップロードします。
+   - これは**秘密情報**です。アップロード後は手元から削除してかまいません。
+
+**Supabase（5分ごとの自動実行）**
+
+1. 合言葉を作って登録します（値はパスワードマネージャに保存）。
+
+   ```bash
+   openssl rand -hex 32        # 表示された64文字をコピー
+   npx supabase@2.119.0 secrets set REMINDER_CRON_SECRET='<上の64文字>'
+   ```
+
+2. ダッシュボード → **Database** → **Extensions** で `pg_cron` と `pg_net` を有効にします。
+3. **SQL Editor** で次を実行します（`<...>` は置き換え。合言葉は手順1と同じ値）。
+
+   ```sql
+   select vault.create_secret('https://<project-ref>.supabase.co', 'project_url');
+   select vault.create_secret('<手順1の64文字>', 'reminder_cron_secret');
+   ```
+
+4. リポジトリの `supabase/manual/schedule_weigh_in_reminders.sql` の中身を SQL Editor に貼り付けて実行します（1回だけ）。
+5. 数分後、SQL Editor で `select * from cron.job_run_details order by start_time desc limit 5;` を実行し、`succeeded` になっていることを確認します。
+   - 失敗している場合は、その行の `return_message` を開発側に共有してください。合言葉そのものは共有しないでください。
+
+**動作確認（実機）**
+
+1. アプリで **マイページ** → **通知設定** → **体重の記録リマインダー** を ON にし、通知を許可します。
+2. 今日の体重記録を削除し、時刻を「今から5〜10分後」に設定します。
+3. アプリを閉じて待ち、通知が1回だけ届くことを確認します。iPhone はアイコンに「1」が付きます。
+4. 通知をタップすると体重入力画面が開くこと、記録するとアイコンの「1」が消えることを確認します。
+5. 翌日以降、体重を先に記録した日は通知が届かないことを確認します。
+
 ## 8. 実機テスト（結果を開発側に共有してください）
 
-- 通知：docs/QA_CHECKLIST.md §4 の10項目
+- 通知：docs/QA_CHECKLIST.md §4 の項目（体重リマインダーを含む）
 - 課金：docs/BILLING.md §6 の12項目（iOS は Sandbox テスター、Android はライセンステスター）
 - Supabase：docs/SUPABASE_SETUP.md §7 の項目
 - 結果は「項目・端末（機種/OS）・OK/NG・NGなら画面の様子」を箇条書きで送ってください。スクリーンショットに個人情報や秘密情報が写っていないか確認してから送ってください。

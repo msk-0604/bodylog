@@ -10,19 +10,23 @@ import { REMINDER_INFO, type ReminderKind, type ReminderSetting } from '@/domain
 const { AndroidImportance, IosAuthorizationStatus } = Notifications;
 
 /**
- * Local reminder notifications (no server, no push token).
- *
- * Settings live in the device-local `notification_settings` table: reminders are a property of
- * the device the user carries, so they are not synced between devices. Scheduling is idempotent:
- * every change cancels all of our reminders and schedules the enabled ones again.
+ * Notifications:
+ * - meal / daily-review reminders: LOCAL daily notifications (no server). Settings live in the
+ *   device-local `notification_settings` table. Scheduling is idempotent: every change cancels
+ *   our reminders and schedules the enabled ones again (this also removes the old local
+ *   "reminder-weigh_in" from earlier versions, so it can't double up with the server push).
+ * - weigh-in reminder: a SERVER push sent only when today's weight is missing (push.ts).
  */
 
 export const REMINDER_CHANNEL_ID = 'reminders';
+/** Android channel of the server-sent weigh-in push (must match the Edge Function). */
+export const WEIGH_IN_CHANNEL_ID = 'weigh-in';
 const ID_PREFIX = 'reminder-';
 
+export type NotificationRoute = '/weight-entry' | '/meals' | '/';
+
 /** Screen opened when a reminder is tapped. */
-export const REMINDER_ROUTES: Record<ReminderKind, '/weight-entry' | '/meals' | '/'> = {
-  weigh_in: '/weight-entry',
+export const REMINDER_ROUTES: Record<ReminderKind, NotificationRoute> = {
   breakfast: '/meals',
   lunch: '/meals',
   dinner: '/meals',
@@ -33,22 +37,57 @@ export const notificationsSupported = () => Platform.OS === 'ios' || Platform.OS
 
 let configured = false;
 
-/** Foreground presentation + Android channel. Safe to call more than once. */
-export async function configureNotifications(): Promise<void> {
-  if (configured || !notificationsSupported()) return;
-  configured = true;
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
+/**
+ * Returns true when today's weight is already recorded ON THIS DEVICE (synced or not). Set by
+ * the weigh-in module; used to hide a server push that arrives while the app is open after an
+ * offline record the server hasn't received yet.
+ */
+let weighInRecordedLocally: (() => Promise<boolean>) | null = null;
+export function setWeighInRecordedCheck(fn: (() => Promise<boolean>) | null) {
+  weighInRecordedLocally = fn;
+}
+
+const HIDDEN = {
+  shouldShowBanner: false,
+  shouldShowList: false,
+  shouldPlaySound: false,
+  shouldSetBadge: false,
+} as const;
+
+/** Foreground presentation for one notification. Exported for tests. */
+export async function presentationFor(n: Notifications.Notification) {
+  const data = n.request.content.data as { kind?: unknown } | undefined;
+  if (data?.kind === 'weigh_in') {
+    if (await weighInRecordedLocally?.().catch(() => false)) return HIDDEN;
+    return {
       shouldShowBanner: true,
       shouldShowList: true,
       shouldPlaySound: false,
-      shouldSetBadge: false,
-    }),
-  });
+      shouldSetBadge: true,
+    };
+  }
+  return {
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  };
+}
+
+/** Foreground presentation + Android channels. Safe to call more than once. */
+export async function configureNotifications(): Promise<void> {
+  if (configured || !notificationsSupported()) return;
+  configured = true;
+  Notifications.setNotificationHandler({ handleNotification: presentationFor });
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(REMINDER_CHANNEL_ID, {
       name: 'リマインダー',
       importance: AndroidImportance.DEFAULT,
+    });
+    await Notifications.setNotificationChannelAsync(WEIGH_IN_CHANNEL_ID, {
+      name: '体重の記録リマインダー',
+      importance: AndroidImportance.HIGH,
+      showBadge: true,
     });
   }
 }
@@ -64,7 +103,8 @@ export async function ensureNotificationPermission(): Promise<PermissionResult> 
   }
   if (!current.canAskAgain) return 'denied';
   const asked = await Notifications.requestPermissionsAsync({
-    ios: { allowAlert: true, allowBadge: false, allowSound: true },
+    // badge: the weigh-in push shows "1" on the icon until today's weight is recorded
+    ios: { allowAlert: true, allowBadge: true, allowSound: true },
   });
   return asked.granted ? 'granted' : 'denied';
 }
@@ -128,22 +168,21 @@ export async function rescheduleReminders(): Promise<void> {
   }
 }
 
-const ROUTES = new Set<string>(Object.values(REMINDER_ROUTES));
+const ROUTES = new Set<string>([...Object.values(REMINDER_ROUTES), '/weight-entry']);
 
-function routeOf(response: Notifications.NotificationResponse | null) {
+/** Route of a tapped notification (local reminders and the weigh-in push carry data.url). */
+export function routeOf(
+  response: Notifications.NotificationResponse | null,
+): NotificationRoute | null {
   const url = response?.notification.request.content.data?.url;
-  return typeof url === 'string' && ROUTES.has(url)
-    ? (url as (typeof REMINDER_ROUTES)[ReminderKind])
-    : null;
+  return typeof url === 'string' && ROUTES.has(url) ? (url as NotificationRoute) : null;
 }
 
 /**
  * Opens the screen for a tapped reminder once the app is ready (signed in and onboarded),
  * including the tap that launched the app. Returns an unsubscribe function.
  */
-export function listenForReminderTaps(
-  open: (route: (typeof REMINDER_ROUTES)[ReminderKind]) => void,
-) {
+export function listenForReminderTaps(open: (route: NotificationRoute) => void) {
   if (!notificationsSupported()) return () => {};
   const initial = routeOf(Notifications.getLastNotificationResponse());
   if (initial) {

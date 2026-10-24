@@ -4,6 +4,7 @@ import {
   cancelAllReminders,
   ensureNotificationPermission,
   REMINDER_CHANNEL_ID,
+  routeOf,
 } from '@/features/notifications/scheduler';
 import { mockNotifications } from '@/testing/notificationsMock';
 
@@ -38,14 +39,14 @@ it('serializes quick successive changes (no duplicates, last one wins)', async (
 
 it('cancels only its own notifications', async () => {
   mockNotifications.scheduled.set('other', { identifier: 'other', content: {}, trigger: null });
-  await applyReminders(on('weigh_in', 7, 0));
+  await applyReminders(on('breakfast', 8, 0));
   await cancelAllReminders();
   expect([...mockNotifications.scheduled.keys()]).toEqual(['other']);
 });
 
 it('schedules nothing without permission and never prompts by itself', async () => {
   mockNotifications.permission = { granted: false, canAskAgain: true };
-  await applyReminders(on('weigh_in', 7, 0));
+  await applyReminders(on('breakfast', 8, 0));
   expect(mockNotifications.scheduled.size).toBe(0);
   expect(mockNotifications.requests).toBe(0);
 });
@@ -54,4 +55,22 @@ it('does not prompt again once the user denied it', async () => {
   mockNotifications.permission = { granted: false, canAskAgain: false };
   expect(await ensureNotificationPermission()).toBe('denied');
   expect(mockNotifications.requests).toBe(0);
+});
+
+it('removes the local weigh-in reminder of earlier versions (the server push replaces it)', async () => {
+  mockNotifications.scheduled.set('reminder-weigh_in', {
+    identifier: 'reminder-weigh_in',
+    content: {},
+    trigger: { type: 'daily', hour: 7, minute: 0 },
+  });
+  await applyReminders(on('lunch', 12, 0));
+  expect([...mockNotifications.scheduled.keys()]).toEqual(['reminder-lunch']);
+});
+
+it('routes the weigh-in push and local reminders by their data.url only', () => {
+  const resp = (data: Record<string, unknown>) =>
+    ({ notification: { request: { content: { data } } } }) as never;
+  expect(routeOf(resp({ url: '/weight-entry', kind: 'weigh_in' }))).toBe('/weight-entry');
+  expect(routeOf(resp({ url: '/meals' }))).toBe('/meals');
+  expect(routeOf(resp({ url: 'https://evil.example' }))).toBeNull();
 });

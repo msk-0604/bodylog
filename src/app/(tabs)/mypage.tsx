@@ -62,8 +62,10 @@ export default function MyPageScreen() {
   const profile = useProfile().data;
   const goal = useGoal(useToday()).data;
   const local = isLocalMode();
-  const weekStartsOn = usePreferences().data?.weekStartsOn ?? 1;
-  const reminderCount = (useReminders().data ?? []).filter((r) => r.enabled).length;
+  const prefs = usePreferences().data;
+  const weekStartsOn = prefs?.weekStartsOn ?? 1;
+  const reminderCount =
+    (useReminders().data ?? []).filter((r) => r.enabled).length + (prefs?.weighIn.enabled ? 1 : 0);
 
   const chooseWeekStart = () => {
     const set = (v: 0 | 1) =>

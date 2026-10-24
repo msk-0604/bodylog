@@ -1,6 +1,6 @@
 # BODYLOG タスク一覧
 
-最終更新: 2026-10-24（Phase 7）
+最終更新: 2026-10-24（Phase 7・体重リマインダー）
 凡例: [x] 完了 / [~] 一部完了 / [ ] 未着手 / 🔐 ユーザーの承認・操作が必要
 
 ## 次に再開するとき
@@ -15,7 +15,8 @@
 2. 🔐 USER_ACTIONS.md §3：GitHub Actions「Food data dry run」で成分表を検証 → ステージングに適用
 3. 🔐 USER_ACTIONS.md §4〜§6：App Store Connect / Google Play / RevenueCat の設定
 4. 🔐 USER_ACTIONS.md §7〜§8：EAS で development / preview ビルド → 実機テスト（QA_CHECKLIST §4、BILLING §6）→ 結果を共有
-5. 実機テストの結果を受けた修正、CSVエクスポート・詳細栄養分析（Premium）、Phase 8（ストア資料・アイコン）
+5. 🔐 USER_ACTIONS.md §7-2：体重リマインダーのプッシュ通知（APNs・FCM・pg_cron）→ 実機で QA_CHECKLIST §4.1
+6. 実機テストの結果を受けた修正、CSVエクスポート・詳細栄養分析（Premium）、Phase 8（ストア資料・アイコン）
 
 ## ユーザー判断待ち 🔐
 
@@ -132,6 +133,22 @@
 - [ ] 🔐 Webhook の実環境での受信確認
 - [ ] CSVエクスポート・詳細栄養分析（Premium機能。現在「準備中」で購入画面でも宣伝しない）
 
+## 体重の記録リマインダー（サーバープッシュ）— 実装・自動テスト済み／実機・外部設定待ち
+
+- [x] 通知時刻（5分刻み）・ON/OFF、Supabase（`user_preferences`）に保存して端末間で同期、端末のタイムゾーンを保存・更新
+- [x] サーバーでユーザーのタイムゾーンの設定時刻に当日（現地日付）の体重記録を確認、記録済みなら送らない、未記録のみ Expo Push で送信（Edge Function `weigh-in-reminders`、pg_cron 5分ごと）
+- [x] 1日1回（冪等性キー：ユーザー×種類×現地日付）、送信失敗は最大3回まで再送、停止した処理の再取得、夏時間、送信枠3時間
+- [x] プッシュトークンをユーザー×端末で管理、DeviceNotRegistered（ticket / receipt）で無効化、送信履歴と配送結果（ticket・receipt）を保存（端末表示とは区別）
+- [x] 通知タップで体重入力画面、体重の入力・編集・削除でバッジ・未入力状態を再計算、記録済みなら通知センターの体重リマインダーを消去
+- [x] アプリ表示中は端末内の記録（未同期を含む）を確認して誤通知を表示しない
+- [x] ログアウトでトークン登録解除・バッジ消去、アカウント切替でトークン付け替え、アカウント削除で全削除
+- [x] 通知が許可されていない場合の案内、ホームでの未記録表示（通知なしでも確認可能）、無料で利用可能
+- [x] 旧ローカル「朝の体重測定」通知を廃止・取り消し（二重通知防止）、iOS のバッジ許可、Android チャンネル `weigh-in`
+- [ ] 🔐 APNs キー（EAS）、Firebase / FCM V1、`google-services.json`（EAS ファイル環境変数）、`eas init`
+- [ ] 🔐 Supabase：マイグレーション適用、関数デプロイ、`REMINDER_CRON_SECRET`、pg_cron / pg_net、Vault、`supabase/manual/schedule_weigh_in_reminders.sql`
+- [ ] 🔐 実機テスト（QA_CHECKLIST §4.1：アプリ終了中の受信、バッジ表示、Android ランチャー差、オフライン記録時の既知の制約、2台・アカウント切替）
+- [ ] 既知の制約：オフラインで記録した体重が同期されるまでの間、アプリを閉じていると通知が届く可能性（仕様書 §11.1）
+
 ## Phase 7 — 品質保証（実機・実サービス未検証）
 
 - [x] 単体テスト（栄養・丸め・体重・日付・区分・上限・権限・METs・正規化・目標推定・入力検証・セッション保存・課金・設定値検査）
@@ -182,6 +199,12 @@
 | 2026-10-24 | Phase 7：DBテスト 10 / 20 / 30 / 40 / 50 / 60_security_audit（マイグレーション4本）                           | 合格（60 は修正前に失敗を確認）                          |
 | 2026-10-24 | Phase 7：Edge Functions 3本の `deno check`、`expo export`（iOS/Android）、`expo config`                       | 成功                                                     |
 | 2026-10-24 | Phase 7：`npm audit --omit=dev`                                                                               | high 5件（Expo CLI 経由・アプリ本体外・修正版なし）      |
+| 2026-10-24 | 体重リマインダー：`tsc` / ESLint / Prettier                                                                   | 合格                                                     |
+| 2026-10-24 | 体重リマインダー：Jest 32スイート238件（TZ=Asia/Tokyo）、182件は TZ=America/New_York でも                     | 合格                                                     |
+| 2026-10-24 | 体重リマインダー：カバレッジ 文85.3% / 分岐74.4% / 関数78.7% / 行88.2%                                        | 計測                                                     |
+| 2026-10-24 | 体重リマインダー：DBテスト 10〜70（70_weigh_in_reminders 追加、マイグレーション5本）                          | 合格                                                     |
+| 2026-10-24 | 体重リマインダー：Edge Functions 4本の `deno check`、`expo export`（iOS/Android）、`expo config`              | 成功                                                     |
+| —          | 体重リマインダーの実機受信・バッジ表示・pg_cron 実行                                                          | **未検証**                                               |
 | —          | 実ストアでの購入・更新・解約・返金、Webhook受信                                                               | **未検証**                                               |
 | —          | ローカル通知の実機表示（iOS / Android）                                                                       | **未検証**（Jestではモックで検証）                       |
 | —          | 実Supabase（Auth・同期・Edge Function）                                                                       | **未検証**                                               |

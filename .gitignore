@@ -55,3 +55,11 @@ supabase/.branches/
 # generated food data (apply to Supabase; do not commit until redistribution terms are confirmed)
 food_master*.sql
 food_master_report*.json
+
+# Firebase / store credentials (provided to EAS as file environment variables, never committed)
+google-services.json
+GoogleService-Info.plist
+*.p8
+*.p12
+*.keystore
+*.jks

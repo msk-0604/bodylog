@@ -129,11 +129,16 @@ describe('preferences & reminders', () => {
     expect(await getPreferences(db, U)).toEqual({
       includeExerciseInBudget: false,
       weekStartsOn: 1,
+      weighIn: { enabled: false, hour: 7, minute: 0 },
+      timeZone: 'Asia/Tokyo',
     });
     await savePreferences(db, U, { includeExerciseInBudget: true });
     expect((await getPreferences(db, U)).includeExerciseInBudget).toBe(true);
     await savePreferences(db, U, { weekStartsOn: 0 });
-    expect(await getPreferences(db, U)).toEqual({ includeExerciseInBudget: true, weekStartsOn: 0 });
+    expect(await getPreferences(db, U)).toMatchObject({
+      includeExerciseInBudget: true,
+      weekStartsOn: 0,
+    });
   });
 
   it('stores reminder settings per device and validates time', async () => {

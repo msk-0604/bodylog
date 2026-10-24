@@ -235,7 +235,14 @@ CREATE TABLE notification_settings (
 );
 `;
 
-const MIGRATIONS: readonly string[] = [V1, V2];
+/** Weigh-in reminder (server push): settings synced through user_preferences. */
+const V3 = `
+ALTER TABLE user_preferences ADD COLUMN weigh_in_reminder_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE user_preferences ADD COLUMN weigh_in_reminder_time TEXT NOT NULL DEFAULT '07:00';
+ALTER TABLE user_preferences ADD COLUMN time_zone TEXT NOT NULL DEFAULT 'Asia/Tokyo';
+`;
+
+const MIGRATIONS: readonly string[] = [V1, V2, V3];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
@@ -271,13 +278,19 @@ export const USER_TABLES = [
   'meal_template_items',
   'sync_cursors',
   'food_cache',
-  'meta',
 ] as const;
+
+/** Device-level meta keys that are not personal data and survive a sign-out. */
+const DEVICE_META_KEYS = ['installation_id'] as const;
 
 export async function wipeUserData(db: SqlDb): Promise<void> {
   await db.transaction(async (tx) => {
     for (const t of USER_TABLES) await tx.exec(`DELETE FROM ${t}`);
-    // cached Premium answers belong to an account too
-    await tx.exec("DELETE FROM meta WHERE key LIKE 'plan_cache%'");
+    // all account-related meta (owner, sync state, cached Premium answers); the installation id
+    // identifies the device for push tokens and stays
+    await tx.run(
+      `DELETE FROM meta WHERE key NOT IN (${DEVICE_META_KEYS.map(() => '?').join(', ')})`,
+      [...DEVICE_META_KEYS],
+    );
   });
 }

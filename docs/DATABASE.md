@@ -21,31 +21,36 @@
 
 ## 2. テーブル
 
-| テーブル                | 用途                                                                       | 主な制約                                                               |
-| ----------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `profiles`              | ニックネーム・身長・生年月日・性別（任意）・活動量・TZ・規約同意           | `id = auth.users.id`。新規ユーザー作成時にトリガーで作成               |
-| `user_preferences`      | 運動消費を残りkcalに反映するか 等                                          | トリガーで作成                                                         |
-| `nutrition_goals`       | 目標の**履歴**（`effective_from` ごと）                                    | `unique(user_id, effective_from)`、kcal 500–10000                      |
-| `body_measurements`     | 体重・体脂肪率                                                             | 20–300kg、1–75%                                                        |
-| `food_master`           | 日本食品標準成分表（100g当たり）                                           | `unique(source_version, food_code)`、trigram GIN                       |
-| `food_serving_units`    | 検証済みの個数・パック換算                                                 | 0 < g ≤ 5000                                                           |
-| `custom_foods`          | ユーザー登録食品                                                           | 換算はラベルとgがセット                                                |
-| `food_favorites`        | お気に入り（マスタ or ユーザー食品のどちらか1つ）                          | `num_nonnulls = 1`、重複不可（部分ユニーク）、**無料10件（トリガー）** |
-| `meal_entries`          | 食事（日付・時刻・区分）                                                   | 区分は4種                                                              |
-| `meal_items`            | 食事の食品（**栄養値スナップショット**）                                   | 0 < g ≤ 5000、複合FK                                                   |
-| `meal_templates`        | 食事テンプレート                                                           | **無料1件（トリガー）**                                                |
-| `meal_template_items`   | テンプレート内の食品と分量                                                 | 複合FK                                                                 |
-| `exercise_entries`      | 運動                                                                       | 1–1440分、`kcal_is_estimated`                                          |
-| `exercise_sets`         | 筋トレのセット（種目・重量・回数）                                         | 複合FK                                                                 |
-| `subscriptions`         | 課金状態（RevenueCat Webhookのみ更新）                                     | ユーザーは読み取りのみ                                                 |
-| `subscription_events`   | Webhook生イベント（`id` = RevenueCat event id で冪等）                     | ユーザーはアクセス不可                                                 |
-| `notification_settings` | 通知の種類別ON/OFF・時刻（**現在アプリは未使用**：通知設定は端末ローカル） | PK(user_id, kind)                                                      |
+| テーブル                | 用途                                                                                       | 主な制約                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `profiles`              | ニックネーム・身長・生年月日・性別（任意）・活動量・TZ・規約同意                           | `id = auth.users.id`。新規ユーザー作成時にトリガーで作成                        |
+| `user_preferences`      | 運動消費を残りkcalに反映するか 等                                                          | トリガーで作成                                                                  |
+| `nutrition_goals`       | 目標の**履歴**（`effective_from` ごと）                                                    | `unique(user_id, effective_from)`、kcal 500–10000                               |
+| `body_measurements`     | 体重・体脂肪率                                                                             | 20–300kg、1–75%                                                                 |
+| `food_master`           | 日本食品標準成分表（100g当たり）                                                           | `unique(source_version, food_code)`、trigram GIN                                |
+| `food_serving_units`    | 検証済みの個数・パック換算                                                                 | 0 < g ≤ 5000                                                                    |
+| `custom_foods`          | ユーザー登録食品                                                                           | 換算はラベルとgがセット                                                         |
+| `food_favorites`        | お気に入り（マスタ or ユーザー食品のどちらか1つ）                                          | `num_nonnulls = 1`、重複不可（部分ユニーク）、**無料10件（トリガー）**          |
+| `meal_entries`          | 食事（日付・時刻・区分）                                                                   | 区分は4種                                                                       |
+| `meal_items`            | 食事の食品（**栄養値スナップショット**）                                                   | 0 < g ≤ 5000、複合FK                                                            |
+| `meal_templates`        | 食事テンプレート                                                                           | **無料1件（トリガー）**                                                         |
+| `meal_template_items`   | テンプレート内の食品と分量                                                                 | 複合FK                                                                          |
+| `exercise_entries`      | 運動                                                                                       | 1–1440分、`kcal_is_estimated`                                                   |
+| `exercise_sets`         | 筋トレのセット（種目・重量・回数）                                                         | 複合FK                                                                          |
+| `subscriptions`         | 課金状態（RevenueCat Webhookのみ更新）                                                     | ユーザーは読み取りのみ                                                          |
+| `subscription_events`   | Webhook生イベント（`id` = RevenueCat event id で冪等）                                     | ユーザーはアクセス不可                                                          |
+| `notification_settings` | 通知の種類別ON/OFF・時刻（**現在アプリは未使用**：食事・振り返りの通知設定は端末ローカル） | PK(user_id, kind)                                                               |
+| `push_tokens`           | Expo プッシュトークン（インストールごと1行、ログイン中のユーザーに付け替え）               | UNIQUE(device_id)・UNIQUE(token)、ユーザーは自分の行の参照のみ（書き込みはRPC） |
+| `reminder_deliveries`   | 体重リマインダーの送信履歴・冪等性キー                                                     | UNIQUE(user_id, kind, local_date)、サーバーのみ                                 |
+| `push_messages`         | 端末ごとの送信結果（Expo ticket / receipt）                                                | サーバーのみ                                                                    |
 
 同期待ちの管理は端末SQLiteの各行の `rev` / `synced_rev` で行う（当初案の `sync_operations` アウトボックスは不採用、ARCHITECTURE.md §4）。`goal_history` は `nutrition_goals` の履歴方式で代替。
 
 ## 3. 関数・トリガー
 
 権限（`20261027000000_function_privileges.sql`）: Supabase は新しい関数の実行権限を anon / authenticated に既定で付与するため、`search_foods`（authenticated）以外の実行権限を取り消し。`is_premium` はトリガー内部と service_role のみ（アプリは RLS で自分の `subscriptions` 行を読む）。
+
+体重リマインダー（`20261028000000_weigh_in_reminders.sql`）: `user_preferences` に `weigh_in_reminder_enabled` / `weigh_in_reminder_time`（"HH:MM"・5分刻みのCHECK）/ `time_zone` を追加。アプリ用RPC `register_push_token` / `unregister_push_token`（authenticated、security definer）。スケジューラ用 `claim_weigh_in_reminders`（現地時刻・現地日付の体重有無・有効トークン・冪等な行作成・再送/停止中の再取得）、`record_weigh_in_results`、`fail_weigh_in_delivery`、`pending_push_receipts`、`record_push_receipts`（service_role のみ）。
 
 課金（`20261026000000_billing.sql`、すべて `security definer`・`search_path=''`・service_role のみ実行可）:
 
@@ -95,13 +100,15 @@
 - 目標は1日1行に収束（20_sync_rules）
 - 食品取り込みSQLの2回適用で重複しない・検索・NULL保持（30_food_import）
 - 課金：書込関数は service_role のみ（authenticated/anon は実行不可）、ユーザーは `subscriptions` を書けない・他人の行を読めない・イベントを読めない、購入→解約（期限まで有効）→猶予→期限切れ→再購入→返金の遷移、古いイベントで巻き戻らない、期限なし付与（infinity）、イベントの冪等記録（new/retry/duplicate）、アカウント削除で `subscriptions` 削除・イベント匿名化（50_billing）
-- セキュリティ監査（60_security_audit）：public の全テーブルで RLS 有効、ビューなし、security definer 関数は search_path 固定、anon はテーブル・関数とも権限なし、authenticated が実行できる関数は `search_foods` のみ、サーバー所有テーブルは書き込み不可、今後追加される関数も anon に既定で実行権限を与えない
+- 体重リマインダー（70_weigh_in_reminders）：設定時刻前は対象外、未記録なら対象・記録済みなら対象外・削除後は再び対象、同じ現地日付は1回だけ、通信失敗は5分後から最大3回、停止中の処理は15分後に再取得、OFF・時刻変更・タイムゾーン変更、3時間の送信枠、夏時間（重複する時刻で1回・存在しない時刻は直後）、DeviceNotRegistered で無効化・全端末無効なら no_devices、端末なしのユーザーは対象外、不明なタイムゾーンは無視、受領確認、アカウント切替でトークン付け替え・他人の端末は解除不可、再インストールで同じトークンが重複しない、ユーザーは送信履歴を読めない・スケジューラを実行できない、アカウント削除で削除
+- セキュリティ監査（60_security_audit）：public の全テーブルで RLS 有効、ビューなし、security definer 関数は search_path 固定、anon はテーブル・関数とも権限なし、authenticated が実行できる関数は `search_foods`・`register_push_token`・`unregister_push_token` のみ、サーバー所有テーブルは書き込み不可、今後追加される関数も anon に既定で実行権限を与えない
 - 運動・セットの upsert（再送で重複しない）、`user_preferences` の更新、運動時間・重量・回数の CHECK 制約、論理削除した運動が復活しない、他ユーザーの運動・設定を読み書きできない（40_exercise_preferences）
 
 ### 端末SQLite（`src/data/db/schema.ts`）
 
 - マイグレーション V2（Phase 4/5）：`exercise_entries` / `exercise_sets` / `user_preferences`（同期対象）、`notification_settings`（端末ローカル・同期しない、PK `kind`）。
-- 既存端末は起動時に V1 → V2 を自動適用（`schema.test` / `phase4.test` で検証）。
+- マイグレーション V3：`user_preferences` に体重リマインダー設定とタイムゾーンを追加（同期対象）。
+- 既存端末は起動時に V1 → V2 → V3 を自動適用（`schema.test` / `phase4.test` で検証）。
 
 ## 7. バックアップ・復旧
 

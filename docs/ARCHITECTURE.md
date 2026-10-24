@@ -112,13 +112,31 @@ SQLite へのアクセスは単一接続をミューテックスで直列化し�
 - 日付キーの加減算はUTC演算で行いDSTの影響を受けない（`domain/date.ts`）。
 - 「今日」はアプリ復帰時と0:00に更新（`lib/useToday.ts`）。
 
-## 5.1 ローカル通知（実装済み・`src/features/notifications/scheduler.ts`）
+## 5.1 通知（`src/features/notifications/`）
 
-- `expo-notifications` のローカル通知のみ（プッシュトークン・サーバー送信なし）。Androidはチャンネル `reminders`。
-- 5種類（朝の体重測定・朝食・昼食・夕食・1日の振り返り）を `DAILY` トリガーで予約。識別子 `reminder-<kind>`。変更のたびに自分の識別子だけを取り消して再予約（直列化して重複予約を防止）。
+**体重の記録リマインダー＝サーバープッシュ**（実装済み・実機未検証）
+
+```
+pg_cron（5分ごと）─HTTP + 合言葉─▶ Edge Function weigh-in-reminders
+   claim_weigh_in_reminders(now)  … 現地時刻≧設定時刻・現地日付の体重なし・有効トークンあり
+                                     → reminder_deliveries に (user, weigh_in, 現地日付) を1行だけ作成
+   Expo Push API（≤100件/リクエスト）→ APNs / FCM → 端末
+   record_weigh_in_results / fail_weigh_in_delivery（再送は最大3回）
+   pending_push_receipts → getReceipts → record_push_receipts（DeviceNotRegistered → トークン無効化）
+アプリ：register_push_token / unregister_push_token（RPC）、user_preferences で設定を同期
+```
+
+- 判定ロジック：SQL（`supabase/migrations/20261028000000_weigh_in_reminders.sql`）と送信処理（`supabase/functions/_shared/weighInReminders.ts`、Jestでテスト）。アプリ側の同じ規則は `src/domain/weighIn.ts`。
+- アプリ：`weighIn.ts`（トークン登録・解除、インストールID、バッジ、タイムゾーン同期）、`useWeighIn.ts`（ローカルデータが変わるたびにバッジ再計算、ホーム表示）、`scheduler.ts` の `presentationFor`（アプリ表示中に届いた体重リマインダーを、端末内に今日の記録があれば非表示）。
+- インストールID（`meta.installation_id`）はログアウトしても残す（個人データではない）。トークンはインストールIDごとに1行で、ログインしたユーザーに付け替える。
+- Android チャンネル `weigh-in`（重要度 HIGH・バッジ表示）。
+
+**食事・振り返り＝ローカル通知**
+
+- `expo-notifications` の `DAILY` トリガー。識別子 `reminder-<kind>`。変更のたびに自分の識別子だけを取り消して再予約（直列化）。以前の `reminder-weigh_in` もこの時に取り消す。
 - 許可は**ユーザーが通知をONにした時だけ**要求。拒否済みなら再要求せず、端末の設定を開く案内を表示。
-- 再予約のタイミング：サインイン完了時（アプリ起動時）・アプリ復帰時（OS設定で許可が変わった場合に対応）・設定変更時。`DAILY` は端末のローカル時刻で発火するため、タイムゾーン変更後も「毎日7:00」のまま。
-- 通知タップで該当画面（体重入力・食事・ホーム）を開く（オンボーディング完了後のみ）。
+- 再予約：サインイン完了時・アプリ復帰時・設定変更時。
+- 通知タップで該当画面を開く（オンボーディング完了後のみ、`data.url` の許可リストのみ）。
 
 ## 6. 課金（実装済み・実ストア未検証・詳細は docs/BILLING.md）
 

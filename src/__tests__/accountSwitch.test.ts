@@ -7,6 +7,7 @@ import { createTestDb } from '@/data/db/testing/nodeDb';
 import { getMeta } from '@/data/repo/profile';
 import { resetSessionForTests, initSession, signOut, useSession } from '@/features/auth/session';
 import { setBillingForTests, type BillingClient } from '@/features/premium/billing';
+import { getInstallationId, pushConfig } from '@/features/notifications/weighIn';
 import { reloadPlan } from '@/features/premium/entitlement';
 import { queryClient } from '@/lib/queryClient';
 import { mockNotifications } from '@/testing/notificationsMock';
@@ -35,6 +36,7 @@ const mockServer = {
   listeners: [] as Listener[],
   offline: false,
   subscriptions: new Map<string, Record<string, unknown>>(),
+  rpc: [] as string[],
 };
 jest.mock('@/lib/supabase', () => ({
   getSupabase: () => ({
@@ -44,7 +46,10 @@ jest.mock('@/lib/supabase', () => ({
         mockServer.listeners.push(cb);
         return { data: { subscription: { unsubscribe: () => {} } } };
       },
-      signOut: async () => ({ error: null }),
+      signOut: async () => {
+        mockServer.rpc.push('auth.signOut');
+        return { error: null };
+      },
     },
     from: (table: string) => ({
       select: () => ({
@@ -59,6 +64,10 @@ jest.mock('@/lib/supabase', () => ({
       }),
     }),
     functions: { invoke: async () => ({ data: null, error: new Error('not deployed') }) },
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      mockServer.rpc.push(`${fn}:${String(args.p_device_id)}`);
+      return { data: null, error: null };
+    },
   }),
 }));
 
@@ -91,6 +100,8 @@ beforeEach(async () => {
   mockServer.listeners = [];
   mockServer.offline = false;
   mockServer.subscriptions.clear();
+  mockServer.rpc = [];
+  pushConfig.projectId = () => 'eas-project-id';
   mockNotifications.reset();
   calls.length = 0;
   setBillingForTests(recorder);
@@ -139,7 +150,7 @@ it('switching accounts without an explicit sign-out wipes A’s data and plan ca
   await signIn(A);
   await reloadPlan();
   await mockDb!.run(
-    "INSERT INTO notification_settings (kind, enabled, hour, minute, updated_at) VALUES ('weigh_in', 1, 7, 0, 'x')",
+    "INSERT INTO notification_settings (kind, enabled, hour, minute, updated_at) VALUES ('breakfast', 1, 8, 0, 'x')",
   );
 
   // a different user's session arrives (e.g. signed in on the web, deep link)
@@ -149,4 +160,30 @@ it('switching accounts without an explicit sign-out wipes A’s data and plan ca
   mockServer.offline = true;
   expect(await reloadPlan()).toBe('free');
   expect(calls.at(-1)).toBe(`identify:${B}`);
+});
+
+it('push token follows the signed-in account; sign-out unregisters it first and clears the badge', async () => {
+  mockNotifications.permission = { granted: true, canAskAgain: true };
+  await initSession();
+  await signIn(A);
+  const device = await getInstallationId();
+  for (let i = 0; i < 100 && !mockServer.rpc.includes(`register_push_token:${device}`); i++) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  expect(mockServer.rpc).toContain(`register_push_token:${device}`);
+
+  mockNotifications.badge = 1; // A had an unrecorded day
+  mockServer.rpc = [];
+  await signOut();
+  // unregistered while still authenticated, then signed out
+  expect(mockServer.rpc.slice(0, 2)).toEqual([`unregister_push_token:${device}`, 'auth.signOut']);
+  await new Promise((r) => setTimeout(r, 10));
+  expect(mockNotifications.badge).toBe(0);
+
+  mockServer.rpc = [];
+  await signIn(B); // same installation is now registered for B
+  for (let i = 0; i < 100 && !mockServer.rpc.includes(`register_push_token:${device}`); i++) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  expect(mockServer.rpc).toContain(`register_push_token:${device}`);
 });

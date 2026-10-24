@@ -3,7 +3,7 @@
 do $$
 declare
   r record;
-  allowed_auth text[] := array['search_foods'];
+  allowed_auth text[] := array['search_foods', 'register_push_token', 'unregister_push_token'];
 begin
   -- every table has RLS enabled
   for r in
