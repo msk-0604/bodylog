@@ -33,7 +33,8 @@ import {
 import { isValidGrams, MAX_FOOD_GRAMS, scaleNutrients } from '@/domain/nutrition';
 import { parseDecimalInput } from '@/domain/weight';
 import { NutrientSummary } from '@/features/meals/NutrientSummary';
-import { usePlan } from '@/features/premium/usePlan';
+import { usePlan } from '@/features/premium/entitlement';
+import { showPremiumInfo } from '@/features/premium/premiumInfo';
 import { haptics } from '@/lib/haptics';
 import { MIN_TAP, spacing, useTheme } from '@/theme';
 
@@ -129,7 +130,11 @@ function FoodForm({
       haptics.warning();
       Alert.alert(
         'お気に入りの上限です',
-        `無料プランではお気に入りを${FREE_LIMITS.favorites}件まで登録できます。不要なお気に入りを解除するか、Premium（月額350円）で無制限に登録できます。`,
+        `無料プランではお気に入りを${FREE_LIMITS.favorites}件まで登録できます。不要なお気に入りを解除するか、Premiumで無制限に登録できます。`,
+        [
+          { text: '閉じる', style: 'cancel' },
+          { text: 'Premiumを見る', onPress: () => showPremiumInfo('お気に入りの無制限登録') },
+        ],
       );
     } else haptics.success();
   };

@@ -11,7 +11,8 @@ import { isDateKey, toDateKey } from '@/domain/date';
 import { FREE_LIMITS } from '@/domain/entitlements';
 import { isMealType, MEAL_TYPE_LABELS } from '@/domain/mealType';
 import { formatKcal } from '@/domain/nutrition';
-import { usePlan } from '@/features/premium/usePlan';
+import { usePlan } from '@/features/premium/entitlement';
+import { showPremiumInfo } from '@/features/premium/premiumInfo';
 import { haptics } from '@/lib/haptics';
 
 /** Saves the items of one logged meal as a template. */
@@ -47,7 +48,11 @@ export default function NewTemplateScreen() {
       haptics.warning();
       Alert.alert(
         'テンプレートの上限です',
-        `無料プランではテンプレートを${FREE_LIMITS.templates}件まで作成できます。既存のテンプレートを編集・削除するか、Premium（月額350円）で無制限に作成できます。`,
+        `無料プランではテンプレートを${FREE_LIMITS.templates}件まで作成できます。既存のテンプレートを編集・削除するか、Premiumで無制限に作成できます。`,
+        [
+          { text: '閉じる', style: 'cancel' },
+          { text: 'Premiumを見る', onPress: () => showPremiumInfo('食事テンプレートの無制限作成') },
+        ],
       );
     } else {
       Alert.alert('名前を入力してください');

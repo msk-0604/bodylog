@@ -7,6 +7,7 @@ import { wipeUserData } from '@/data/db/schema';
 import { getMeta, getProfile, setMeta } from '@/data/repo/profile';
 import { countPending } from '@/data/sync/syncEngine';
 import { scheduleSync, setSyncUser, syncNow } from '@/data/sync/syncService';
+import { getBilling } from '@/features/premium/billing';
 import {
   cancelAllReminders,
   configureNotifications,
@@ -65,6 +66,10 @@ async function enterSignedIn(userId: string, email: string | null) {
   }
   await setMeta(db, OWNER_KEY, userId);
   setSyncUser(userId);
+  // RevenueCat app user id = Supabase uid, bound before any purchase can happen.
+  void getBilling()
+    .identify(userId)
+    .catch(() => {});
   useSession.setState({ userId, email });
 
   if (!isLocalMode() && (await getMeta(db, INITIAL_SYNC_KEY)) !== userId) {
@@ -92,6 +97,9 @@ function enterSignedOut() {
   setSyncUser(null);
   // Reminders belong to the signed-in user's settings (wiped on sign-out).
   void cancelAllReminders().catch(() => {});
+  void getBilling()
+    .reset()
+    .catch(() => {});
   netSub?.();
   netSub = null;
   queryClient.clear();

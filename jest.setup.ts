@@ -15,3 +15,10 @@ jest.mock(
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     require('./src/testing/notificationsMock').notificationsModule,
 );
+
+jest.mock(
+  'react-native-purchases',
+  () =>
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('./src/testing/purchasesMock').purchasesModule,
+);

@@ -31,13 +31,29 @@ npx supabase db push          # supabase/migrations/*.sql を適用
 - Email Templates：日本語の文面に変更（確認メール・パスワード再設定）。リンク先は `{{ .ConfirmationURL }}` のまま（PKCEで `bodylog://auth/callback?code=...` にリダイレクトされます）。
 - 本番では独自SMTP（送信元ドメイン）を設定（Supabase標準の送信は件数制限あり）。
 
-## 4. Edge Function（アカウント削除）
+## 4. Edge Functions
 
 ```bash
 npx supabase functions deploy delete-account
+npx supabase functions deploy subscription-sync
+# RevenueCat は Supabase の JWT を送れないため、JWT検証を外し、関数内で Authorization ヘッダーを検証する
+npx supabase functions deploy revenuecat-webhook --no-verify-jwt
 ```
 
-`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` はEdge実行環境が自動提供します（手動で設定・共有しない）。
+| 関数                 | 役割                                                                | 呼び出し元                           |
+| -------------------- | ------------------------------------------------------------------- | ------------------------------------ |
+| `delete-account`     | 本人のアカウント削除（＋RevenueCat顧客の削除：秘密キー設定時）      | アプリ（ユーザーJWT）                |
+| `subscription-sync`  | 呼び出し元ユーザーの購入状態を RevenueCat REST API で再確認して保存 | アプリ（購入・復元後、起動・復帰時） |
+| `revenuecat-webhook` | RevenueCat Webhook を受け、`subscriptions` を更新（冪等・順序保護） | RevenueCat                           |
+
+シークレット（**リポジトリ・アプリには置かない**。CLIで登録）：
+
+```bash
+npx supabase secrets set REVENUECAT_WEBHOOK_AUTH='<32文字以上のランダム文字列>'
+npx supabase secrets set REVENUECAT_SECRET_API_KEY='<RevenueCat の Secret API key (v1)>'
+```
+
+`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` はEdge実行環境が自動提供します（手動で設定・共有しない）。課金の設定全体は docs/BILLING.md。
 
 ## 5. 食品マスタ
 
@@ -64,4 +80,6 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon / publishable key>
 - [ ] 食事・体重を記録 → Table Editor に行が作成される（自分の行のみ見えること）
 - [ ] 2台目の端末でログインすると記録が同期される
 - [ ] 機内モードで記録 → 復帰後に同期される
-- [ ] アカウント削除 → auth.users と全記録が削除される
+- [ ] アカウント削除 → auth.users と全記録が削除される（`subscriptions` も削除、`subscription_events` は user_id が NULL になる）
+- [ ] Webhook：RevenueCat ダッシュボードの「Send test event」で 200 が返る。誤った Authorization では 401
+- [ ] Sandbox購入 → 数秒以内に `subscriptions` に行ができ、アプリが Premium になる（docs/BILLING.md §6）

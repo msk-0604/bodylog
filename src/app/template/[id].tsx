@@ -30,7 +30,7 @@ import { usableTemplateIds } from '@/domain/entitlements';
 import { isMealType, MEAL_TYPE_LABELS, MEAL_TYPES, type MealType } from '@/domain/mealType';
 import { formatKcal, scaleNutrients } from '@/domain/nutrition';
 import { useTemplates } from '@/features/meals/hooks';
-import { usePlan } from '@/features/premium/usePlan';
+import { usePlan } from '@/features/premium/entitlement';
 import { haptics } from '@/lib/haptics';
 import { spacing } from '@/theme';
 

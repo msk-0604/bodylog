@@ -45,6 +45,11 @@
 
 ## 3. 関数・トリガー
 
+課金（`20261026000000_billing.sql`、すべて `security definer`・`search_path=''`・service_role のみ実行可）:
+
+- `apply_subscription_state(user, status, store, product, period_type, expires_at, will_renew, event_id, event_at)`：`event_at` が最後に適用したものより古ければ無視（順序保護）。未知のユーザー・未購入ユーザーの「期限切れ」は行を作らない。
+- `record_subscription_event(id, user, type, event_at, payload)` → `new` / `retry` / `duplicate`、`finish_subscription_event(id)`。
+
 | 名前                                       | 内容                                                                                                                       |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
 | `set_updated_at()`                         | 全テーブルの `updated_at` 更新                                                                                             |
@@ -87,6 +92,7 @@
 - 無料上限ちょうどの状態で既存お気に入りを upsert しても拒否されない／11件目は upsert でも拒否（20_sync_rules）
 - 目標は1日1行に収束（20_sync_rules）
 - 食品取り込みSQLの2回適用で重複しない・検索・NULL保持（30_food_import）
+- 課金：書込関数は service_role のみ（authenticated/anon は実行不可）、ユーザーは `subscriptions` を書けない・他人の行を読めない・イベントを読めない、購入→解約（期限まで有効）→猶予→期限切れ→再購入→返金の遷移、古いイベントで巻き戻らない、期限なし付与（infinity）、イベントの冪等記録（new/retry/duplicate）、アカウント削除で `subscriptions` 削除・イベント匿名化（50_billing）
 - 運動・セットの upsert（再送で重複しない）、`user_preferences` の更新、運動時間・重量・回数の CHECK 制約、論理削除した運動が復活しない、他ユーザーの運動・設定を読み書きできない（40_exercise_preferences）
 
 ### 端末SQLite（`src/data/db/schema.ts`）
