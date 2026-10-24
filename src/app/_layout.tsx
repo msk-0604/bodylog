@@ -15,7 +15,8 @@ import { AppState, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { Button, EmptyState, ErrorState, LoadingView } from '@/components/ui';
+import { AppErrorScreen } from '@/components/AppErrorScreen';
+import { Button, ErrorState, LoadingView } from '@/components/ui';
 import { initSession, retryInitialSync, signOut, useSession } from '@/features/auth/session';
 import { listenForReminderTaps, rescheduleReminders } from '@/features/notifications/scheduler';
 import { getBilling } from '@/features/premium/billing';
@@ -172,21 +173,7 @@ function Centered({ children }: { children: React.ReactNode }) {
 export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
   return (
     <AppThemeProvider>
-      <ErrorScreen onRetry={retry} />
+      <AppErrorScreen onRetry={retry} />
     </AppThemeProvider>
-  );
-}
-
-function ErrorScreen({ onRetry }: { onRetry: () => void }) {
-  const { colors } = useTheme();
-  return (
-    <View style={{ flex: 1, justifyContent: 'center', backgroundColor: colors.background }}>
-      <EmptyState
-        title="問題が発生しました"
-        message="記録データは端末に保存されています。もう一度お試しください。"
-        actionLabel="再試行"
-        onAction={onRetry}
-      />
-    </View>
   );
 }

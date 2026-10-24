@@ -10,17 +10,39 @@
 
 ## 2. マイグレーション適用
 
-Supabase CLI をインストールし、リポジトリで実行：
+リポジトリで実行（Supabase CLI は `npx supabase@2.119.0` で固定。手順のバージョンと揃えるため）：
 
 ```bash
-npx supabase login
-npx supabase link --project-ref <project-ref>
-npx supabase db push          # supabase/migrations/*.sql を適用
+npx supabase@2.119.0 login
+npx supabase@2.119.0 link --project-ref <project-ref>
+npx supabase@2.119.0 db push --dry-run   # 適用されるマイグレーションの一覧だけを表示（変更しない）
+npx supabase@2.119.0 db push             # supabase/migrations/*.sql（4本）を適用
 ```
 
-適用後、Table Editor で全テーブルの RLS が有効（盾アイコン）になっていることを確認。
+| マイグレーション                         | 内容                                              |
+| ---------------------------------------- | ------------------------------------------------- |
+| `20261024000000_initial_schema.sql`      | テーブル・RLS・無料枠トリガー・食品検索           |
+| `20261025000000_sync_rules.sql`          | 論理削除の復活禁止、upsert時の無料枠判定          |
+| `20261026000000_billing.sql`             | 課金状態の書き込み関数（service_role のみ）       |
+| `20261027000000_function_privileges.sql` | 関数の実行権限を最小化（anon は何も実行できない） |
+
+適用後の確認：
+
+- Table Editor で全テーブルの RLS が有効（盾アイコン）
+- Advisors > Security Advisor でエラーがない（警告は内容を確認して TASKS.md に記録）
+- 同じ内容をローカルでは `scripts/db-test.sh` が検証（`60_security_audit.sql`：RLS・search_path・anon/authenticated の実行権限）
+
+**本番プロジェクトへの `db push` はプロジェクトオーナーの承認後に実施**（ステージングで先に確認）。
 
 ## 3. 認証（Authentication）設定
+
+`supabase/config.toml` に BODYLOG の認証設定（メール確認ON、パスワード8文字以上・英字と数字、リダイレクトURL、Edge Functions の JWT 検証設定）を記録しています。リンク済みのプロジェクトには次で反映できます（実行前に差分が表示されるので確認してから承認）：
+
+```bash
+npx supabase@2.119.0 config push
+```
+
+ダッシュボードで設定する場合は以下と同じ値にします。
 
 - Providers > Email：有効、**Confirm email：ON**
 - Password：最小8文字（アプリ側も8文字以上・英字と数字を要求）

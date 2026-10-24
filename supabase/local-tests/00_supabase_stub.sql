@@ -2,8 +2,6 @@
 -- so migrations + RLS can be tested against a plain PostgreSQL (CI / local).
 -- NOT used in real Supabase projects.
 
-create extension if not exists pgcrypto;
-
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then
@@ -19,6 +17,8 @@ end;
 $$;
 
 create schema if not exists extensions;
+-- Supabase installs extensions into the "extensions" schema (not public)
+create extension if not exists pgcrypto with schema extensions;
 create schema if not exists auth;
 
 create table if not exists auth.users (

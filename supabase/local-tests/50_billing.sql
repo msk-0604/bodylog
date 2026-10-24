@@ -26,7 +26,12 @@ begin
     raise exception 'FAIL: authenticated can insert subscriptions';
   exception when insufficient_privilege then null;
   end;
-  if public.is_premium(auth.uid()) then raise exception 'FAIL: premium without purchase'; end if;
+  -- is_premium is internal (service role / triggers); users read public.subscriptions instead
+  begin
+    perform public.is_premium(auth.uid());
+    raise exception 'FAIL: authenticated can call is_premium';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 reset role;
 
@@ -129,7 +134,6 @@ select set_config('request.jwt.claim.sub', :'hiro', false);
 do $$
 begin
   if exists (select 1 from public.subscriptions) then raise exception 'FAIL: other user subscription visible'; end if;
-  if public.is_premium(auth.uid()) then raise exception 'FAIL: hiro premium'; end if;
   begin
     perform 1 from public.subscription_events;
     raise exception 'FAIL: events readable';
