@@ -1,7 +1,7 @@
 # BODYLOG データベース設計
 
 最終更新: 2026-10-24
-マイグレーション: [`supabase/migrations/20261024000000_initial_schema.sql`](../supabase/migrations/20261024000000_initial_schema.sql)
+マイグレーション: [`20261024000000_initial_schema.sql`](../supabase/migrations/20261024000000_initial_schema.sql), [`20261025000000_sync_rules.sql`](../supabase/migrations/20261025000000_sync_rules.sql)
 テスト: [`supabase/local-tests/`](../supabase/local-tests/)（`scripts/db-test.sh`、CIで実行）
 
 > ローカルPostgreSQL 16 + Supabase互換スタブ（auth.users / auth.uid() / anon・authenticated・service_role ロール）で適用・テスト済み。**実際のSupabaseプロジェクトへの適用は未実施**（Phase 2でプロジェクト作成後に `supabase db push`）。
@@ -41,7 +41,7 @@
 | `subscription_events`   | Webhook生イベント（`id` = RevenueCat event id で冪等）           | ユーザーはアクセス不可                                                 |
 | `notification_settings` | 通知の種類別ON/OFF・時刻                                         | PK(user_id, kind)                                                      |
 
-`sync_operations`（アウトボックス）は**端末のSQLiteのみ**に持つ（サーバーには不要）。`goal_history` は `nutrition_goals` の履歴方式で代替。
+同期待ちの管理は端末SQLiteの各行の `rev` / `synced_rev` で行う（当初案の `sync_operations` アウトボックスは不採用、ARCHITECTURE.md §4）。`goal_history` は `nutrition_goals` の履歴方式で代替。
 
 ## 3. 関数・トリガー
 
@@ -70,7 +70,7 @@
 - 最近使った食品: `meal_items (user_id, created_at desc)`
 - 食品検索: `food_master.search_text` / `custom_foods.search_text` の trigram GIN
 
-## 6. テスト済み項目（`supabase/local-tests/10_rls_and_constraints.sql`）
+## 6. テスト済み項目（`supabase/local-tests/*.sql`）
 
 - 新規ユーザーで profiles / preferences が作成される
 - 他ユーザーの記録を参照・更新・削除できない／他ユーザー名義で作成できない
@@ -83,6 +83,10 @@
 - 同一IDの再送（upsert）で重複しない
 - 検索: 部分一致、`%` `_` がリテラル扱い、空文字は0件、不明値は NULL のまま
 - アカウント削除で全個人データが削除され、食品マスタは残る
+- 論理削除済みの行が古い端末からの upsert で復活しない（20_sync_rules）
+- 無料上限ちょうどの状態で既存お気に入りを upsert しても拒否されない／11件目は upsert でも拒否（20_sync_rules）
+- 目標は1日1行に収束（20_sync_rules）
+- 食品取り込みSQLの2回適用で重複しない・検索・NULL保持（30_food_import）
 
 ## 7. バックアップ・復旧
 

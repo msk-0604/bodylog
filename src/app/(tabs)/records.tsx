@@ -20,12 +20,11 @@ import {
   GRAPH_RANGES,
   isGraphRangeAvailable,
   type GraphRange,
-  type Plan,
 } from '@/domain/entitlements';
 import { averageOverDays, dailyWeights } from '@/domain/weight';
-import { useLocalRecords } from '@/features/records/localRecordsStore';
+import { usePlan } from '@/features/premium/usePlan';
+import { useWeights } from '@/features/profile/hooks';
 import { WeightChart } from '@/features/weight/WeightChart';
-import { haptics } from '@/lib/haptics';
 import { useToday } from '@/lib/useToday';
 import { spacing, useTheme } from '@/theme';
 
@@ -55,11 +54,10 @@ export default function RecordsScreen() {
 function WeightSection() {
   const { colors } = useTheme();
   const today = useToday();
-  // TODO(Phase 6): plan comes from the server-verified subscription state.
-  const plan: Plan = 'free';
+  const plan = usePlan();
   const [range, setRange] = useState<GraphRange>('7d');
-  const weights = useLocalRecords((s) => s.weights);
-  const removeWeight = useLocalRecords((s) => s.removeWeight);
+  const weightsQuery = useWeights();
+  const weights = useMemo(() => weightsQuery.data ?? [], [weightsQuery.data]);
 
   const daily = useMemo(() => dailyWeights(weights), [weights]);
   const sorted = useMemo(
@@ -85,14 +83,6 @@ function WeightSection() {
       return;
     }
     setRange(r);
-  };
-
-  const confirmDelete = (id: string, label: string) => {
-    haptics.warning();
-    Alert.alert('この記録を削除しますか？', label, [
-      { text: 'キャンセル', style: 'cancel' },
-      { text: '削除', style: 'destructive', onPress: () => removeWeight(id) },
-    ]);
   };
 
   return (
@@ -140,9 +130,8 @@ function WeightSection() {
                 title={`${w.weightKg.toFixed(1)} kg`}
                 subtitle={label}
                 value={w.bodyFatPct !== null ? `体脂肪 ${w.bodyFatPct.toFixed(1)}%` : undefined}
-                chevron={false}
-                onPress={() => confirmDelete(w.id, `${label}  ${w.weightKg.toFixed(1)} kg`)}
-                accessibilityHint="タップすると削除できます"
+                onPress={() => router.push({ pathname: '/weight-entry', params: { id: w.id } })}
+                accessibilityHint="タップすると編集・削除できます"
               />
             );
           })}

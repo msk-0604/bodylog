@@ -20,7 +20,12 @@ for f in "$ROOT"/supabase/migrations/*.sql; do
   echo "migrate: $(basename "$f")"
   run "$f"
 done
-for f in "$ROOT"/supabase/local-tests/1*.sql; do
+# Food import SQL (fictional fixture rows), imported twice to check idempotency.
+node "$ROOT/scripts/foods/testing/fixture-sql.ts" fixture-v1 2>/dev/null | psql "$TEST_URL" -v ON_ERROR_STOP=1 -q
+node "$ROOT/scripts/foods/testing/fixture-sql.ts" fixture-v2 2>/dev/null | psql "$TEST_URL" -v ON_ERROR_STOP=1 -q
+echo "import: food fixture (v1, v2)"
+
+for f in "$ROOT"/supabase/local-tests/[1-9]*.sql; do
   echo "test: $(basename "$f")"
   run "$f"
 done

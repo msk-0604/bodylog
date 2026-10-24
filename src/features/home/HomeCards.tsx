@@ -11,8 +11,17 @@ import {
   type NutrientTotals,
 } from '@/domain/nutrition';
 import type { WeightMeasurement } from '@/domain/weight';
-import type { ExerciseRecord, MealItemRecord } from '@/features/records/localRecordsStore';
+import type { MealItemView } from '@/data/repo/meals';
+
 import { spacing, useTheme } from '@/theme';
+
+/** Exercise logging arrives in Phase 4; the card shows its empty state until then. */
+export type ExerciseSummary = {
+  id: string;
+  name: string;
+  durationMin: number;
+  kcal: number | null;
+};
 
 /* ---------------- Calories ---------------- */
 
@@ -230,7 +239,7 @@ export function TodayMealsCard({
   items,
   onAdd,
 }: {
-  items: readonly MealItemRecord[];
+  items: readonly MealItemView[];
   onAdd: () => void;
 }) {
   const { colors } = useTheme();
@@ -284,7 +293,7 @@ export function TodayMealsCard({
 
 /* ---------------- Exercise ---------------- */
 
-export function TodayExerciseCard({ items }: { items: readonly ExerciseRecord[] }) {
+export function TodayExerciseCard({ items }: { items: readonly ExerciseSummary[] }) {
   const { colors } = useTheme();
   if (items.length === 0) {
     return (

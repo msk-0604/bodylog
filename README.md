@@ -4,7 +4,7 @@
 
 日本国内向けの食事・体重・運動記録アプリ（iOS / Android）。AI機能は搭載しない。基本無料、Premium 月額350円（税込）。
 
-> ステータス: **開発中（Phase 1 完了）**。認証・食品データ・永続化・課金は未実装です。進捗は [docs/TASKS.md](docs/TASKS.md) を参照してください。
+> ステータス: **開発中（Phase 2・3 実装済み）**。認証・SQLite保存・同期・食品検索/食事記録が動作します（実Supabase・実機・成分表の実データは未検証）。進捗は [docs/TASKS.md](docs/TASKS.md)。
 
 ## ドキュメント
 
@@ -40,9 +40,11 @@ Expo モジュールは `npx expo install` で SDK 互換バージョンを解�
 
 ```bash
 npm ci
-cp .env.example .env.local   # 値を設定（Phase 2 以降で必要）
+cp .env.example .env.local   # Supabase の URL / anon key（未設定なら開発用ローカルモード）
 npm start                    # Expo 開発サーバー
 ```
+
+食品マスタの取り込み：`npm run foods:import -- --input <本表.xlsx> --version "<版>"`（[docs/FOOD_DATA.md](docs/FOOD_DATA.md)）
 
 ネイティブモジュール（expo-sqlite, expo-notifications, Reanimated 等）を使うため、実機/シミュレータでの確認は **Development Build** を推奨します。
 
@@ -62,7 +64,7 @@ npm test              # Jest（単体・画面テスト）
 npm run check         # 上記をまとめて実行
 
 # DBマイグレーション + RLSテスト（PostgreSQL 16 が必要。指定DBサーバー上に bodylog_test を作り直します）
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres ./scripts/db-test.sh
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm run db:test   # Node 22 も必要
 ```
 
 CI（GitHub Actions）で typecheck / lint / format / test / DBテストを実行します。
