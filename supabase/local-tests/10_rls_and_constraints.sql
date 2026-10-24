@@ -47,7 +47,7 @@ values ('d0000000-0000-0000-0000-000000000001', :'alice', 'c0000000-0000-0000-00
 do $$
 begin
   if (select count(*) from public.body_measurements) <> 1 then raise exception 'alice cannot see own weight'; end if;
-  if (select count(*) from public.food_master) <> 3 then raise exception 'alice cannot read food master'; end if;
+  if (select count(*) from public.food_master where source = 'test') <> 3 then raise exception 'alice cannot read food master'; end if;
 end $$;
 
 -- Search: normalized substring match, LIKE wildcards are literal, prefix matches first
@@ -255,7 +255,7 @@ begin
   if (select count(*) from public.food_favorites) + (select count(*) from public.custom_foods) <> 0 then raise exception 'foods survived'; end if;
   if (select count(*) from public.meal_templates) <> 0 then raise exception 'templates survived'; end if;
   if (select count(*) from public.subscriptions) <> 0 then raise exception 'subscription survived'; end if;
-  if (select count(*) from public.food_master) <> 3 then raise exception 'food master must remain'; end if;
+  if (select count(*) from public.food_master where source = 'test') <> 3 then raise exception 'food master must remain'; end if;
 end $$;
 
 \echo 'ALL DB TESTS PASSED'

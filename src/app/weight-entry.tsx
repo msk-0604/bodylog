@@ -1,16 +1,10 @@
-import { router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Alert, StyleSheet, TextInput, View } from 'react-native';
 
-import { AppText, Button, Card, PressableScale } from '@/components/ui';
+import { AppText, Button, Card, closeModal, LoadingView, ModalScreen } from '@/components/ui';
+import { writeLocal } from '@/data/hooks';
+import { addWeight, deleteWeight, updateWeight, type WeightRecord } from '@/data/repo/body';
 import { formatDateKeyJa, formatTimeJa, toDateKey } from '@/domain/date';
 import {
   BODY_FAT_MAX_PCT,
@@ -22,24 +16,45 @@ import {
   WEIGHT_MAX_KG,
   WEIGHT_MIN_KG,
 } from '@/domain/weight';
-import { useLocalRecords } from '@/features/records/localRecordsStore';
+import { useWeights } from '@/features/profile/hooks';
 import { haptics } from '@/lib/haptics';
 import { MIN_TAP, radius, spacing, typography, useTheme } from '@/theme';
 
 export default function WeightEntryScreen() {
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const addWeight = useLocalRecords((s) => s.addWeight);
-  const previous = useLocalRecords((s) => latestMeasurement(s.weights));
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const weights = useWeights();
+  if (!weights.data) return <LoadingView />;
+  const editing = id ? weights.data.find((w) => w.id === id) : undefined;
+  // Prefill: the record being edited, or the latest weight (most days change only slightly).
+  const prev = latestMeasurement(weights.data);
+  return (
+    <WeightForm
+      editing={editing}
+      initialWeight={editing ? editing.weightKg.toFixed(1) : (prev?.weightKg.toFixed(1) ?? '')}
+      initialFat={editing?.bodyFatPct?.toFixed(1) ?? ''}
+    />
+  );
+}
 
-  const [weightText, setWeightText] = useState(previous ? previous.weightKg.toFixed(1) : '');
-  const [fatText, setFatText] = useState('');
+function WeightForm({
+  editing,
+  initialWeight,
+  initialFat,
+}: {
+  editing: WeightRecord | undefined;
+  initialWeight: string;
+  initialFat: string;
+}) {
+  const { colors } = useTheme();
+  const [text, setWeightText] = useState(initialWeight);
+  const [fatText, setFatText] = useState(initialFat);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [now] = useState(() => new Date());
+  const measuredAt = editing?.measuredAt ?? now;
 
-  const weight = parseDecimalInput(weightText);
+  const weight = parseDecimalInput(text);
   const fat = fatText.trim() === '' ? null : parseDecimalInput(fatText);
   const weightError =
     weight === null || !isValidWeightKg(weight)
@@ -50,9 +65,7 @@ export default function WeightEntryScreen() {
       ? `${BODY_FAT_MIN_PCT}〜${BODY_FAT_MAX_PCT}%の範囲で入力してください`
       : null;
 
-  const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
-
-  const save = () => {
+  const save = async () => {
     setSubmitted(true);
     if (weightError || fatError || weight === null) {
       haptics.warning();
@@ -62,78 +75,74 @@ export default function WeightEntryScreen() {
     if (savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
-    addWeight({ weightKg: weight, bodyFatPct: fat, measuredAt: now });
-    haptics.success();
-    close();
+    try {
+      const input = { weightKg: weight, bodyFatPct: fat, measuredAt };
+      await writeLocal(async (db, uid) => {
+        if (editing) await updateWeight(db, uid, editing.id, input);
+        else await addWeight(db, uid, input);
+      });
+      haptics.success();
+      closeModal();
+    } catch {
+      savingRef.current = false;
+      setSaving(false);
+      Alert.alert('保存できませんでした', 'もう一度お試しください。');
+    }
+  };
+
+  const remove = () => {
+    if (!editing) return;
+    haptics.warning();
+    Alert.alert('この記録を削除しますか？', `${editing.weightKg.toFixed(1)} kg`, [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: '削除',
+        style: 'destructive',
+        onPress: async () => {
+          await writeLocal((db, uid) => deleteWeight(db, uid, editing.id));
+          closeModal();
+        },
+      },
+    ]);
   };
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.flex, { backgroundColor: colors.backgroundGrouped }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <View
-        style={[
-          styles.header,
-          { paddingTop: Platform.OS === 'ios' ? spacing.md : insets.top + spacing.sm },
-        ]}
-      >
-        <PressableScale
-          onPress={close}
-          accessibilityRole="button"
-          accessibilityLabel="キャンセル"
-          style={styles.headerButton}
-        >
-          <AppText variant="body" color="accent">
-            キャンセル
-          </AppText>
-        </PressableScale>
-        <AppText variant="headline" accessibilityRole="header">
-          体重を記録
-        </AppText>
-        <View style={styles.headerButton} />
-      </View>
+    <ModalScreen title={editing ? '体重の編集' : '体重を記録'} testID="weight-entry-screen">
+      <AppText variant="subhead" color="textSecondary" style={styles.when}>
+        {formatDateKeyJa(toDateKey(measuredAt))} {formatTimeJa(measuredAt)}
+      </AppText>
 
-      <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
-        keyboardShouldPersistTaps="handled"
-      >
-        <AppText variant="subhead" color="textSecondary" style={styles.when}>
-          {formatDateKeyJa(toDateKey(now))} {formatTimeJa(now)}
-        </AppText>
-
-        <Card style={styles.card}>
-          <Field
-            label="体重"
-            unit="kg"
-            value={weightText}
-            onChangeText={setWeightText}
-            placeholder="65.0"
-            autoFocus
-            error={submitted ? weightError : null}
-            testID="weight-input"
-          />
-          <View style={[styles.separator, { backgroundColor: colors.separator }]} />
-          <Field
-            label="体脂肪率（任意）"
-            unit="%"
-            value={fatText}
-            onChangeText={setFatText}
-            placeholder="—"
-            error={submitted ? fatError : null}
-            testID="bodyfat-input"
-          />
-        </Card>
-
-        <Button
-          label="保存"
-          onPress={save}
-          loading={saving}
-          style={styles.save}
-          testID="weight-save-button"
+      <Card style={styles.card}>
+        <Field
+          label="体重"
+          unit="kg"
+          value={text}
+          onChangeText={setWeightText}
+          placeholder="65.0"
+          autoFocus={!editing}
+          error={submitted ? weightError : null}
+          testID="weight-input"
         />
-      </ScrollView>
-    </KeyboardAvoidingView>
+        <View style={[styles.separator, { backgroundColor: colors.separator }]} />
+        <Field
+          label="体脂肪率（任意）"
+          unit="%"
+          value={fatText}
+          onChangeText={setFatText}
+          placeholder="—"
+          error={submitted ? fatError : null}
+          testID="bodyfat-input"
+        />
+      </Card>
+
+      <Button
+        label="保存"
+        onPress={() => void save()}
+        loading={saving}
+        testID="weight-save-button"
+      />
+      {editing ? <Button label="この記録を削除" variant="destructive" onPress={remove} /> : null}
+    </ModalScreen>
   );
 }
 
@@ -183,22 +192,7 @@ function Field({
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
-  headerButton: {
-    minWidth: 88,
-    minHeight: MIN_TAP,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
-  },
-  content: { paddingHorizontal: spacing.lg },
-  when: { marginTop: spacing.sm, marginBottom: spacing.md, marginLeft: spacing.xs },
+  when: { marginLeft: spacing.xs },
   card: { paddingVertical: spacing.xs },
   field: { paddingVertical: spacing.sm, gap: spacing.xs },
   fieldRow: { flexDirection: 'row', alignItems: 'center', minHeight: MIN_TAP },
@@ -214,5 +208,4 @@ const styles = StyleSheet.create({
   },
   unit: { width: 32, textAlign: 'right' },
   separator: { height: StyleSheet.hairlineWidth },
-  save: { marginTop: spacing.xxl },
 });

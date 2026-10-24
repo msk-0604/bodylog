@@ -1,8 +1,17 @@
 import type { ReactNode } from 'react';
-import type { ColorValue } from 'react-native';
+import { Platform, type ColorValue } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 export type IconProps = { size?: number; color: ColorValue; strokeWidth?: number };
+
+/** Native-only props (react-native-svg forwards them to the DOM on web). */
+const HIDDEN_FROM_A11Y =
+  Platform.OS === 'web'
+    ? {}
+    : ({
+        accessibilityElementsHidden: true,
+        importantForAccessibility: 'no-hide-descendants',
+      } as const);
 
 /** Line icons on a 24×24 grid, 1.8 stroke, round caps — decorative (hidden from screen readers). */
 function Base({
@@ -21,8 +30,7 @@ function Base({
       strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+      {...HIDDEN_FROM_A11Y}
     >
       {children}
     </Svg>

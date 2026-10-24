@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@react-native-community/netinfo": "12.0.1",
     "@supabase/supabase-js": "2.118.0",
     "@tanstack/react-query": "5.104.5",
     "expo": "~58.0.19",
+    "expo-asset": "~58.0.18",
     "expo-constants": "~58.0.13",
     "expo-crypto": "~58.0.7",
     "expo-font": "~58.0.10",
@@ -38,6 +40,7 @@
     "@types/react": "~19.3.0",
     "eslint": "9.39.5",
     "eslint-config-expo": "58.0.4",
+    "exceljs": "4.4.0",
     "jest": "30.5.2",
     "jest-expo": "58.0.12",
     "prettier": "3.9.10",
@@ -56,7 +59,9 @@
     "format:check": "prettier --check .",
     "test": "jest",
     "test:ci": "jest --ci --coverage=false",
-    "check": "npm run typecheck && npm run lint && npm run test:ci"
+    "check": "npm run typecheck && npm run lint && npm run test:ci",
+    "foods:import": "node scripts/foods/import-mext.ts",
+    "db:test": "./scripts/db-test.sh"
   },
   "private": true,
   "jest": {
@@ -65,7 +70,10 @@
       "/node_modules/",
       "/supabase/"
     ],
-    "resolver": "react-native-reanimated/jest/resolver"
+    "resolver": "react-native-reanimated/jest/resolver",
+    "setupFiles": [
+      "<rootDir>/jest.setup.ts"
+    ]
   },
   "engines": {
     "node": ">=22"

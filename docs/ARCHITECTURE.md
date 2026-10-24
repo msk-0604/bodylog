@@ -35,6 +35,7 @@ AI API・LLM・解析サービスは使用しない。
 
 ```
 src/
+  data/                 SQLite（db/）・リポジトリ（repo/）・同期（sync/）・購読フック（hooks.ts）
   app/                  Expo Router のルート（画面のみ）
     _layout.tsx         Providers / Root Stack / ErrorBoundary
     (tabs)/             下部タブ: index(ホーム) meals records mypage
@@ -57,34 +58,41 @@ docs/                   設計書
 
 ## 3. 状態管理
 
-| 種類                                                     | 手段                                                                                                                                                      |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 記録データ（食事・体重・運動・お気に入り・テンプレート） | SQLite（真の保存先）→ リポジトリ → 購読フック。Phase 1 は一時的に Zustand のメモリストア（`features/records/localRecordsStore.ts`）                       |
-| サーバー状態（食品検索結果・サブスク状態・プロフィール） | TanStack Query（アプリ復帰で再取得）                                                                                                                      |
-| UIの一時状態                                             | React state / 必要時 Zustand                                                                                                                              |
-| 認証セッション                                           | supabase-js（ストレージは expo-secure-store。2KB制限のため大きい値は AES 鍵を SecureStore、暗号文を SQLite/AsyncStorage に保存する方式を Phase 2 で実装） |
+| 種類                                                                             | 手段                                                                                                                                                                                                                      |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 記録データ（食事・体重・お気に入り・テンプレート・マイ食品・目標・プロフィール） | **SQLite（expo-sqlite）が一次保存先**。`src/data/repo/*` のリポジトリ経由で読み書きし、画面は TanStack Query（キー `['local', userId, ...]`）で購読。書き込みは `writeLocal()` が実行 → `['local']` を無効化 → 同期を予約 |
+| サーバー状態（食品検索結果・サブスク状態）                                       | TanStack Query（アプリ復帰で再取得）                                                                                                                                                                                      |
+| セッション                                                                       | Zustand（`features/auth/session.ts`）。supabase-js のセッションは expo-secure-store（Keychain/Keystore）に分割保存（`lib/secureStorage.ts`、1チャンク1800文字）                                                           |
+| UIの一時状態                                                                     | React state / Zustand（食事タブの選択日付・区分など）                                                                                                                                                                     |
 
-## 4. オフライン同期（Phase 5）
+SQLite へのアクセスは単一接続をミューテックスで直列化し、トランザクション中に他の処理が割り込まない（`data/db/types.ts`）。スキーマは `PRAGMA user_version` でバージョン管理（`data/db/schema.ts`）。
 
-### 4.1 書き込み
+## 4. オフライン同期（実装済み・`src/data/sync`）
 
-1. 画面 → リポジトリ `save()` → SQLite に即時書き込み（`sync_state = 'pending'`）→ UI即時反映。
-2. 同一トランザクションで `sync_operations`（アウトボックス, SQLiteのみ）に操作を追加: `{ id, table, record_id, op: upsert|delete, payload, attempts, next_attempt_at }`。
-3. 同期エンジンがオンライン時にアウトボックスを古い順に送信。サーバーへは `upsert (on conflict id)` で送るため、**再送しても重複しない**（IDはクライアント生成UUID v4）。
-4. 失敗時は指数バックオフ（1s→2s→4s…最大15分、ジッター付き）。4xx（検証エラー・上限超過）は再試行せず「同期エラー」として表示し、ユーザーに修正/削除を促す。
+### 4.1 書き込み（push）
+
+1. 画面 → リポジトリ → SQLite に即時書き込み → UI即時反映（通信を待たない）。
+2. 同期対象テーブルの各行は `rev`（ローカル変更ごとに+1）と `synced_rev`（サーバー反映済みのrev）を持つ。`rev > synced_rev` が未送信。専用のアウトボックステーブル（当初案の `sync_operations`）の代わりにこの方式を採用し、同じ行の連続編集を1回の送信にまとめる。
+3. 同期エンジンは未送信行を親→子の順（profiles, nutrition_goals, custom_foods, meal_templates, meal_template_items, meal_entries, meal_items, food_favorites, body_measurements）に `upsert (on conflict id)` で送信。IDはクライアント生成のUUIDなので**再送しても重複しない**（レスポンス喪失時の再送もテスト済み）。送信中に編集された行は `synced_rev` を進めない。
+4. 通信・サーバー障害は指数バックオフ（2秒〜最大15分、ジッター付き）で再試行。サーバーが拒否した行（無料枠超過・制約違反）は1行ずつ切り分けて `sync_error` を記録し、他の行は同期を続ける。拒否された行は編集されるまで再送しない。
+5. 同期のきっかけ：ローカル書き込み後（1.5秒デバウンス）・アプリ復帰時・ネットワーク復帰時（NetInfo）・ホームのプルリフレッシュ・マイページ「データ同期」。
 
 ### 4.2 読み込み（pull）
 
-- テーブルごとに `updated_at > last_pulled_at` を取得（RLSで自分の行のみ）。`deleted_at` が入った行は端末側でも削除扱い。
-- 時計ずれ対策: `last_pulled_at` はサーバーから返った最大 `updated_at` を使う（端末時刻を使わない）。
+- テーブルごとに `updated_at >= cursor` を取得（RLSで自分の行のみ、1000件ページング）。cursor はサーバーが返した最大 `updated_at`（端末時刻を使わない）。
+- 削除された行（`deleted_at` あり）はローカルでも論理削除状態で保持（トゥームストーン）。
+- pull 後、お気に入り・テンプレート・最近の記録が参照する食品マスタのうち端末に無いものを取得してキャッシュ（新しい端末でもオフラインで使えるように）。
+- 新しい端末で初めてログインした時は、初回同期が終わるまで待ってから画面を表示（オフラインなら再試行画面）。
 
 ### 4.3 競合解決ルール
 
 - 単位はレコード（行）。**Last-Writer-Wins（サーバーの `updated_at` 基準）**。
 - 端末に未送信の変更がある行は、pull で上書きしない（送信後に再取得）。
-- 削除は勝つ: 片方で削除（`deleted_at`）された行は、他端末の更新があっても削除のまま。
+- 削除は勝つ: 片方で削除（`deleted_at`）された行は、他端末の更新があっても削除のまま（サーバーのトリガー `prevent_undelete` で保証）。
 - 親子（meal_entries / meal_items）は子行も個別に同期。親が削除されたら子も削除扱い。
-- お気に入り・テンプレート上限超過（サーバー側トリガーで拒否）は「同期エラー」としてPremium案内を表示。
+- お気に入り・テンプレート上限超過（サーバー側トリガーで拒否）は行に `sync_error = premium_required` を記録し、マイページの「データ同期」に件数を表示。
+- 目標（nutrition_goals）は1日1行（`user_id, effective_from` で upsert）。2台で同じ日に変更した場合も後勝ちで1行に収束。
+- ログアウト・アカウント切替時は端末のデータを消去（別アカウントのデータを混在させない）。未送信の記録がある場合はログアウト前に警告。
 
 ### 4.4 端末キャッシュ方針
 
@@ -110,9 +118,11 @@ docs/                   設計書
 - 権限の正: `public.is_premium(uid)`（DB関数）。アプリは `subscriptions` を読んで表示し、SDKの即時状態は補助のみ。
 - オフライン時: 最後に確認した状態と `expires_at` をキャッシュし、期限内のみPremium表示。
 
-## 7. 認証（Phase 2）
+## 7. 認証（実装済み）
 
-- Supabase Auth（メール＋パスワード、メール確認必須、パスワード再設定はディープリンク `bodylog://`）。
+- Supabase Auth（メール＋パスワード、メール確認必須、PKCEフロー）。確認・パスワード再設定メールのリンクは `bodylog://auth/callback` に戻り、`exchangeCodeForSession` でセッション化（`app/auth/callback.tsx`）。別端末で開いた場合は「確認済み・ログインしてください」と案内。
+- 画面遷移は `Stack.Protected` で状態ごとに出し分け：未ログイン→(auth)、初回同期中→待機画面、未オンボーディング→onboarding、パスワード再設定中→reset-password、それ以外→タブ。保護ルートに直接来た場合は `+not-found` が状態に応じてリダイレクト。
+- Supabase 未設定の開発ビルドは「ローカルモード」（アカウントなし・同期なし）。リリースビルドは未設定だと起動しない。
 - 規約・プライバシーポリシーのバージョンと同意日時を `profiles` に保存。
 - アカウント削除: Edge Function `delete-account`（service_role はサーバー側のみ）で `auth.admin.deleteUser` → DBは CASCADE で全削除。削除前にストア解約の案内。
 
